@@ -1,8 +1,18 @@
+"""Authentication provider for Airflow API client that supports JWT tokens.
+AirflowAPIClientAuthProvider is the default authentication provider for Airflow API client. Custom
+providers can be implemented by subclassing AirflowAPIClientAuthProvider and overriding the
+relevant methods. The provider can be configured via command-line arguments or environment
+variables.
+
+See --auth-provider argument in the CLI for more details on how to specify a custom authentication
+provider.
+"""
+
 import base64
 import json
 import os
 import time
-from abc import ABC, abstractproperty
+from abc import ABC, abstractmethod
 from argparse import ArgumentParser
 from typing import TYPE_CHECKING
 
@@ -14,13 +24,16 @@ if TYPE_CHECKING:
     from airflow_client.client import ApiClient
 
 
-class AuthToken(ABC):
-    @abstractproperty
+class AuthToken(ABC):  # pylint: disable=too-few-public-methods
+    """Abstract base class for authentication tokens."""
+    @property
+    @abstractmethod
     def expires(self) -> int:
         """Returns the number of seconds until the token expires."""
 
 
-class AirflowClientJWTToken(AuthToken):
+class AirflowClientJWTToken(AuthToken):  # pylint: disable=too-few-public-methods
+    """Represents a JWT token used for authenticating with the Airflow API."""
     def __init__(self, token: str):
         self.token = token
 
@@ -45,24 +58,31 @@ class AirflowClientJWTToken(AuthToken):
 
 
 class AirflowAPIClientAuthProvider:
+    """Default authentication provider for Airflow API client that supports username/password auth
+    and JWT tokens."""
     def __init__(self, args):
         self.args = args
         self._token = None
 
     @property
     def password(self) -> str:
+        """Returns the password for authentication. Raises an error if password is not provided."""
         if self.args.password is None:
             raise ValueError("Password is required for DefaultAuthProvider")
         return self.args.password
 
     @property
     def username(self) -> str:
+        """Returns the username for authentication. Raises an error if username is not provided."""
         if self.args.username is None:
             raise ValueError("Username is required for DefaultAuthProvider")
         return self.args.username
 
     @property
     def client_token(self) -> AirflowClientJWTToken:
+        """Returns a valid JWT token for authenticating with the Airflow API. If a valid token is
+        already cached, it returns the cached token. Otherwise, it fetches a new token using the
+        username and password."""
         if self._token and self._token.expires > 60:
             return self._token
 
@@ -83,11 +103,20 @@ class AirflowAPIClientAuthProvider:
         return AirflowClientJWTToken(response.json()["access_token"])
 
     def set_client_configuration(self, client: "ApiClient") -> None:
-        # Default to JWT bearer token authentication
+        """Configures the Airflow API client with the appropriate authentication headers. This
+        method is called by the CLI when initializing the API client.
+        `client` is the instance of airflow_client.client.ApiClient that needs to be configured with
+        authentication headers.
+        """
         client.access_token = self.client_token.token
 
     @classmethod
     def add_arguments(cls, profile: str, parser: "ArgumentParser", config: "RawConfigParser"):
+        """Adds authentication-related command-line arguments to the parser. This method is called
+        by the CLI when setting up the argument parser for the specified profile. The arguments
+        added by this method will be available in the `args` object passed to the constructor of the
+        authentication provider.
+        """
         parser.add_argument(
             "--username",
             "-u",

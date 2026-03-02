@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+"""Airflow API Client"""
+
 # This is a client for Airflow 3.1 and the RAW environment
 import argparse
 import configparser
@@ -28,13 +30,16 @@ except ImportError:
 PAYLOADS_PATH = Path(__file__).parent / "payloads"
 
 
-class App:
+class App:  # pylint: disable=too-few-public-methods
+    """Main application class that holds the API client and command-line arguments."""
+
     def __init__(self, client, args):
         self.client = client
         self.args = args
 
 
 def output(data, args, headers=None):
+    """Outputs data in the specified format (JSON, YAML, or human-readable table)."""
     if args.output_format == "json":
         print(json.dumps(data, indent=4, sort_keys=True, default=str))
     elif args.output_format == "yaml":
@@ -63,29 +68,29 @@ def get_available_providers():
 
 
 class Client(airflow_client.client.ApiClient):
+    """Custom API client that extends the generated ApiClient from airflow_client and integrates
+    with the authentication provider."""
+
     def __init__(self, auth, args):
         self.args = args
+        self.auth = auth
         client_configuration = airflow_client.client.Configuration(host=args.endpoint)
         client_configuration.debug = args.verbose >= 3
         auth.set_client_configuration(client_configuration)
         super().__init__(client_configuration)
 
-    def authenticate(self):
-        # Implement authentication logic here
-        pass
-
-    @cached_property
-    def _make_raw_request(self, method, endpoint, **kwargs):
+    def _make_raw_request(self, method, path, **kwargs):
         headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.auth.client_token}",
         }
         result = requests.request(
-            method, f"{self.endpoint}/api/v2{endpoint}", headers=headers, **kwargs
+            method, f"{self.args.endpoint}/api/v2{path}", headers=headers, timeout=60, **kwargs
         )
         return result.json()
 
+    # pylint: disable=invalid-name
     @cached_property
     def _DAG_api(self) -> airflow_client.client.DAGApi:
         return airflow_client.client.DAGApi(self)
@@ -102,11 +107,14 @@ class Client(airflow_client.client.ApiClient):
     def _task_instance_api(self) -> airflow_client.client.TaskInstanceApi:
         return airflow_client.client.TaskInstanceApi(self)
 
+    # pylint: enable=invalid-name
+
 
 def get_xcom(app: App, xcom_spec: str) -> Union[None, Dict[str, Any]]:
-    # Retrieves XCom entries based on the provided specification. The xcom_spec should be in
-    # the format DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]. Depending on the level of specificity in the
-    # xcom_spec, it retrieves the corresponding XCom entries and formats the output
+    """Retrieves XCom entries based on the provided specification. The xcom_spec should be in
+    the format DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]. Depending on the level of specificity in the
+    xcom_spec, it retrieves the corresponding XCom entries and formats the output
+    """
     parts = xcom_spec.split(":")
     if len(parts) < 2:
         logger.error(
@@ -143,8 +151,8 @@ def get_xcom(app: App, xcom_spec: str) -> Union[None, Dict[str, Any]]:
         logger.warning("No XCom entries found for the specified specification", xcom_spec=xcom_spec)
         return None
 
+    entries.sort(key=lambda e: e.timestamp)
     if app.args.output_format in ("json", "yaml"):
-        entries.sort(key=lambda e: e.timestamp)
         dagrun_output = {"dag_id": dag_id, "dag_run_id": dag_run_id}
         for entry in entries:
             dagrun_output.setdefault("tasks", {}).setdefault(entry.task_id, {})[entry.key] = {
@@ -153,18 +161,20 @@ def get_xcom(app: App, xcom_spec: str) -> Union[None, Dict[str, Any]]:
             }
         output(dagrun_output, app.args)
         return dagrun_output
-    else:
-        for entry in entries:
-            headers = ["Task ID", "Key", "Timestamp", "Value"]
-            data = [
-                [
-                    entry.task_id,
-                    entry.key,
-                    entry.timestamp,
-                    entry.value,
-                ]
+
+    # Standard human-readable output, sorted by timestamp
+    for entry in entries:
+        headers = ["Task ID", "Key", "Timestamp", "Value"]
+        data = [
+            [
+                entry.task_id,
+                entry.key,
+                entry.timestamp,
+                entry.value,
             ]
-            output(data, app.args, headers=headers)
+        ]
+        output(data, app.args, headers=headers)
+    return dagrun_output
 
 
 def _get_xcom(
@@ -192,8 +202,9 @@ def _get_xcom(
 
 
 def list_dags(app: App) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
-    # Lists the DAGs available in Airflow by making a GET request to the /dags endpoint and
-    # printing the dag_id and dag_display_name for each DAG in the response.
+    """Lists all DAGs in the Airflow instance. Retrieves all DAGs using the DAGBag class and
+    formats the output based on the specified output format (JSON, YAML, or human-readable table).
+    """
     all_dags = DAGBag(app).get_all_dags(details=False)
     if app.args.output_format in ("json", "yaml"):
         output({"dags": [d.to_dict() for d in all_dags]}, app.args)
@@ -217,8 +228,9 @@ def list_dags(app: App) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
 
 
 def get_payload_for_dag(app, dag_id, dag: Optional[Union[DAG, None]] = None):
-    # Returns the payload expected for a given DAG. Prompts for values for each parameter
-    # defined in the DAG's parameters and constructs a payload dictionary.
+    """Returns the payload expected for a given DAG. Prompts for values for each parameter
+    defined in the DAG's parameters and constructs a payload dictionary.
+    """
     dag = DAG(app, dag_id)
     parameters = dag.params or {}
     payload = {"conf": {}}
@@ -250,9 +262,12 @@ def get_payload_for_dag(app, dag_id, dag: Optional[Union[DAG, None]] = None):
 
 
 def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRun:
-    # Triggers a DAG run by making a POST request to the /dags/{dag_id}/dagRuns endpoint with
-    # an optional payload. The response is printed to the console.
-    # Payload is only the `conf` dict that the DAG will receive, e.g. {"conf": {"key": "value"}}
+    """Triggers a DAG with an optional payload. The response is printed to the console in the
+    specified output format (JSON, YAML, or human-readable). If a payload is provided, it is used as
+    the `conf` for the DAG run. If no payload is provided, the user is prompted to enter values for
+    each parameter defined in the DAG's parameters. After triggering the DAG, the function polls for
+    completion and retrieves any XCom entries associated with the DAG run.
+    """
 
     conf = app.args.conf
 
@@ -266,7 +281,7 @@ def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRu
             if not conf_path.is_file():
                 logger.error("Conf file not found", path=str(conf_path))
                 raise FileNotFoundError(f"Conf file not found: {conf_path}")
-            with open(conf_path) as f:
+            with open(conf_path, "r", encoding="utf-8") as f:
                 conf = f.read()
         conf = {"conf": json.loads(conf)}
 
@@ -278,7 +293,8 @@ def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRu
 
     dag_run: DAGRun = dag.run(conf=conf)
 
-    # Poll for completion
+    # Poll for completion. Prefer this over calling airflow_client's wait_dag_run_until_finished
+    # until that's no longer marked as experimental.
     while dag_run.state not in ("success", "failed"):
         logger.debug("Polling for DAG run completion", dag_id=dag_id, state=dag_run.state)
         time.sleep(2)
@@ -293,6 +309,12 @@ def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRu
 
 
 def main(args):
+    """Main function that initializes the client and executes the specified command based on the
+    command-line arguments. It first determines the authentication provider to use based on the
+    command-line arguments and configuration, then initializes the API client with the chosen
+    authentication provider. Finally, it executes the appropriate function based on the specified
+    command (list, run, create-payload, or xcom) and handles the output accordingly.
+    """
     auth_class = (
         get_available_providers()[args.auth_provider]
         if args.auth_provider
@@ -309,16 +331,17 @@ def main(args):
         run_dag(app, args.dag_id, conf=args.conf)
     elif args.command == "create-payload":
         payload = get_payload_for_dag(app, args.dag_id)
-        output(json.dumps(payload, indent=4, sort_keys=True, default=str))
+        output(json.dumps(payload, indent=4, sort_keys=True, default=str), args)
     elif args.command == "xcom":
         get_xcom(app, args.xcom_spec)
     return True
 
 
 def parse_args(providers):
-    # Initial argument parsing to get profile and config file for loading potential configuration
-    # file before the main argument parsing, allowing config file values to be used as defaults in
-    # the main parser.
+    """Initial argument parsing to get profile and config file for loading potential configuration
+    file before the main argument parsing, allowing config file values to be used as defaults in
+    the main parser.
+    """
 
     default_config_dir = os.getenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))
     default_config_path = Path(default_config_dir) / "airflow-api-client" / "config.ini"
@@ -477,12 +500,17 @@ def parse_args(providers):
 
 
 def cli():
+    """Command-line interface entry point. Parses command-line arguments, initializes the API
+    client, and executes the specified command. It also includes error handling to provide
+    user-friendly error messages and logging based on the verbosity level specified in the
+    command-line arguments.
+    """
     args = None
     try:
         providers = get_available_providers()
         args = parse_args(providers)
         main(args)
-    except Exception as ex:
+    except Exception as ex:  # pylint: disable=broad-except
         if args and args.verbose >= 2:
             logger.exception("An error occurred", error=str(ex))
             sys.exit(1)
@@ -503,6 +531,8 @@ def cli():
             )
         else:
             logger.error("An error occurred", error=str(ex))
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":

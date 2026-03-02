@@ -174,7 +174,7 @@ def get_xcom(app: App, xcom_spec: str) -> Union[None, Dict[str, Any]]:
             ]
         ]
         output(data, app.args, headers=headers)
-    return dagrun_output
+    return None
 
 
 def _get_xcom(
@@ -295,8 +295,8 @@ def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRu
 
     # Poll for completion. Prefer this over calling airflow_client's wait_dag_run_until_finished
     # until that's no longer marked as experimental.
-    while dag_run.state not in ("success", "failed"):
-        logger.debug("Polling for DAG run completion", dag_id=dag_id, state=dag_run.state)
+    while (current_state := dag_run.state) not in ("success", "failed"):
+        logger.debug("Polling for DAG run completion", dag_id=dag_id, state=current_state)
         time.sleep(2)
 
     logger.info("DAG run completed", dag_id=dag_id, final_state=dag_run.state)

@@ -21,11 +21,13 @@ import requests
 if TYPE_CHECKING:
     # The type hint for `args` argument
     from configparser import RawConfigParser
+
     from airflow_client.client import ApiClient
 
 
 class AuthToken(ABC):  # pylint: disable=too-few-public-methods
     """Abstract base class for authentication tokens."""
+
     @property
     @abstractmethod
     def expires(self) -> int:
@@ -34,6 +36,7 @@ class AuthToken(ABC):  # pylint: disable=too-few-public-methods
 
 class AirflowClientJWTToken(AuthToken):  # pylint: disable=too-few-public-methods
     """Represents a JWT token used for authenticating with the Airflow API."""
+
     def __init__(self, token: str):
         self.token = token
 
@@ -60,6 +63,7 @@ class AirflowClientJWTToken(AuthToken):  # pylint: disable=too-few-public-method
 class AirflowAPIClientAuthProvider:
     """Default authentication provider for Airflow API client that supports username/password auth
     and JWT tokens."""
+
     def __init__(self, args):
         self.args = args
         self._token = None

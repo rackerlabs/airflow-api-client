@@ -1,6 +1,7 @@
 """Logging configuration for the application, using structlog for structured logging with
 pretty-printed collections in the console output.
 """
+
 import json
 import logging
 import sys
@@ -11,6 +12,7 @@ import structlog
 class PrettyJSON(str):
     """A string wrapper that is used to indicate that the string should be rendered as-is in the
     console renderer, without quotes or escaping."""
+
     def __repr__(self) -> str:
         # ConsoleRenderer uses repr(value); return raw text instead of quoted/escaped text
         return str(self)

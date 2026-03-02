@@ -8,53 +8,22 @@ import configparser
 import json
 import os
 import sys
-import time
 from functools import cached_property
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 
 import airflow_client.client
 import requests
-from tabulate import tabulate
 
 from airflow_api_client.auth import AirflowAPIClientAuthProvider
+from airflow_api_client.commands import create_payload, run, xcom
 from airflow_api_client.log import logger, set_log_level
-from airflow_api_client.models import DAG, DAGBag, DAGRun, TaskInstance, XComEntry
-
-try:
-    import yaml
-except ImportError:
-    yaml = None
+from airflow_api_client.models import DAGBag
+from airflow_api_client.output import output, yaml
+from airflow_api_client.typedefs import App
 
 PAYLOADS_PATH = Path(__file__).parent / "payloads"
-
-
-class App:  # pylint: disable=too-few-public-methods
-    """Main application class that holds the API client and command-line arguments."""
-
-    def __init__(self, client, args):
-        self.client = client
-        self.args = args
-
-
-def output(data, args, headers=None):
-    """Outputs data in the specified format (JSON, YAML, or human-readable table)."""
-    if args.output_format == "json":
-        print(json.dumps(data, indent=4, sort_keys=True, default=str))
-    elif args.output_format == "yaml":
-
-        print(yaml.dump(data, sort_keys=False))
-    elif headers:  # human output, with tabular data
-        print(
-            tabulate(
-                data,
-                headers=headers,
-                tablefmt=os.getenv("AIRFLOW_API_CLIENT_TABLE_FORMAT", "simple"),
-            )
-        )
-    else:  # human output, raw/unformatted data
-        print(data)
 
 
 def get_available_providers():
@@ -110,97 +79,6 @@ class Client(airflow_client.client.ApiClient):
     # pylint: enable=invalid-name
 
 
-def get_xcom(app: App, xcom_spec: str) -> Union[None, Dict[str, Any]]:
-    """Retrieves XCom entries based on the provided specification. The xcom_spec should be in
-    the format DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]. Depending on the level of specificity in the
-    xcom_spec, it retrieves the corresponding XCom entries and formats the output
-    """
-    parts = xcom_spec.split(":")
-    if len(parts) < 2:
-        logger.error(
-            "Invalid xcom specification format",
-            expected_format="DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]",
-        )
-        raise ValueError(
-            "Invalid xcom specification format. Expected DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]"
-        )
-    dag_id, dag_run_id = parts[0], parts[1]
-    task_id = parts[2] if len(parts) > 2 else None
-    key = parts[3] if len(parts) > 3 else None
-
-    logger.debug(
-        "Getting XCom entry with specification",
-        dag_id=dag_id,
-        dag_run_id=dag_run_id,
-        task_id=task_id,
-        key=key,
-    )
-
-    entries: List[XComEntry] = []
-
-    if task_id:  # Covers dag_id:dag_run_id:task_id and dag_id:dag_run_id:task_id:key
-        ti = TaskInstance(app, dag_id, dag_run_id, task_id)
-        entries.extend(ti.get_xcom_entries(key=key))
-    else:  # dag_id:dag_run_id
-        entries = []
-        dag_run = DAGRun(app, dag_id, dag_run_id)
-        for ti in dag_run.task_instances:
-            entries.extend(ti.get_xcom_entries(key=key))
-
-    if not entries:
-        logger.warning("No XCom entries found for the specified specification", xcom_spec=xcom_spec)
-        return None
-
-    entries.sort(key=lambda e: e.timestamp)
-    if app.args.output_format in ("json", "yaml"):
-        dagrun_output = {"dag_id": dag_id, "dag_run_id": dag_run_id}
-        for entry in entries:
-            dagrun_output.setdefault("tasks", {}).setdefault(entry.task_id, {})[entry.key] = {
-                "value": entry.value,
-                "timestamp": entry.timestamp,
-            }
-        output(dagrun_output, app.args)
-        return dagrun_output
-
-    # Standard human-readable output, sorted by timestamp
-    for entry in entries:
-        headers = ["Task ID", "Key", "Timestamp", "Value"]
-        data = [
-            [
-                entry.task_id,
-                entry.key,
-                entry.timestamp,
-                entry.value,
-            ]
-        ]
-        output(data, app.args, headers=headers)
-    return None
-
-
-def _get_xcom(
-    app: App,
-    dag_id: str,
-    dag_run_id: str,
-    task_id: Union[str, None] = None,
-    key: Union[str, None] = None,
-) -> List[airflow_client.client.models.response_get_xcom_entry.ResponseGetXcomEntry]:
-    # Retrieves the value of an XCom entry for a given DAG run and task. The xcom_spec should be
-    logger.debug(
-        "Retrieving XCom entry", dag_id=dag_id, dag_run_id=dag_run_id, task_id=task_id, key=key
-    )
-
-    if task_id:  # Covers dag_id:dag_run_id:task_id and dag_id:dag_run_id:task_id:key
-        ti = TaskInstance(app, dag_id, dag_run_id, task_id)
-        return ti.get_xcom_entries(key=key)
-
-    # dag_id:dag_run_id
-    entries = []
-    dag_run = DAGRun(app, dag_id, dag_run_id)
-    for ti in dag_run.task_instances:
-        entries.extend(ti.get_xcom_entries(key=key))
-    return entries
-
-
 def list_dags(app: App) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
     """Lists all DAGs in the Airflow instance. Retrieves all DAGs using the DAGBag class and
     formats the output based on the specified output format (JSON, YAML, or human-readable table).
@@ -227,87 +105,6 @@ def list_dags(app: App) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
     return {"dags": [d.to_dict() for d in all_dags]}
 
 
-def get_payload_for_dag(app, dag_id, dag: Optional[Union[DAG, None]] = None):
-    """Returns the payload expected for a given DAG. Prompts for values for each parameter
-    defined in the DAG's parameters and constructs a payload dictionary.
-    """
-    dag = DAG(app, dag_id)
-    parameters = dag.params or {}
-    payload = {"conf": {}}
-    logger.debug("Constructing payload for DAG run", dag_id=dag_id, parameters=parameters)
-
-    for key, value in parameters.items():
-        value_types = value["schema"]["type"]
-        prompt = f"Enter value for parameter: '{key}'\n"
-        prompt += f'Description: {value["description"]}'
-        prompt += f'\nType(s): {", ".join(value_types)}'
-        prompt += "\n> "
-        sys.stdout.write(prompt)
-        value = input()
-        for value_type in value_types:
-            if value_type == "null" and value == "":
-                value = None
-                break
-            if value_type == "integer":
-                value = int(value)
-            elif value_type == "number":
-                value = float(value)
-            elif value_type == "boolean":
-                value = value.lower() in ("true", "1", "yes")
-        try:
-            payload["conf"][key] = json.loads(value)
-        except (json.JSONDecodeError, TypeError):
-            payload["conf"][key] = value
-    return payload
-
-
-def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRun:
-    """Triggers a DAG with an optional payload. The response is printed to the console in the
-    specified output format (JSON, YAML, or human-readable). If a payload is provided, it is used as
-    the `conf` for the DAG run. If no payload is provided, the user is prompted to enter values for
-    each parameter defined in the DAG's parameters. After triggering the DAG, the function polls for
-    completion and retrieves any XCom entries associated with the DAG run.
-    """
-
-    conf = app.args.conf
-
-    dag = DAG(app, dag_id)
-
-    if conf is None:
-        conf = get_payload_for_dag(app, dag_id, dag=dag)
-    else:
-        if conf.startswith("@"):
-            conf_path = Path(conf[1:]).absolute()
-            if not conf_path.is_file():
-                logger.error("Conf file not found", path=str(conf_path))
-                raise FileNotFoundError(f"Conf file not found: {conf_path}")
-            with open(conf_path, "r", encoding="utf-8") as f:
-                conf = f.read()
-        conf = {"conf": json.loads(conf)}
-
-    try:
-        conf = json.loads(conf) if isinstance(conf, str) else conf
-    except json.JSONDecodeError as e:
-        logger.error("Invalid JSON provided for --conf", error=str(e))
-        raise
-
-    dag_run: DAGRun = dag.run(conf=conf)
-
-    # Poll for completion. Prefer this over calling airflow_client's wait_dag_run_until_finished
-    # until that's no longer marked as experimental.
-    while (current_state := dag_run.state) not in ("success", "failed"):
-        logger.debug("Polling for DAG run completion", dag_id=dag_id, state=current_state)
-        time.sleep(2)
-
-    logger.info("DAG run completed", dag_id=dag_id, final_state=dag_run.state)
-
-    get_xcom(app, f"{dag_id}:{dag_run.run_id}")
-
-    return dag_run
-
-    # self.get_xcom(f"{dag_id}:{dag_run_id}")
-
-
 def main(args):
     """Main function that initializes the client and executes the specified command based on the
     command-line arguments. It first determines the authentication provider to use based on the
@@ -328,12 +125,12 @@ def main(args):
     if args.command == "list":
         list_dags(app)
     elif args.command == "run":
-        run_dag(app, args.dag_id, conf=args.conf)
+        run.run_dag(app, args.dag_id, conf=args.conf)
     elif args.command == "create-payload":
-        payload = get_payload_for_dag(app, args.dag_id)
+        payload = create_payload.get_payload_for_dag(app, args.dag_id)
         output(json.dumps(payload, indent=4, sort_keys=True, default=str), args)
     elif args.command == "xcom":
-        get_xcom(app, args.xcom_spec)
+        xcom.get_xcom(app, args.xcom_spec)
     return True
 
 

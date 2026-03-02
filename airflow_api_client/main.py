@@ -292,10 +292,7 @@ def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRu
     # self.get_xcom(f"{dag_id}:{dag_run_id}")
 
 
-def main():
-    providers = get_available_providers()
-    args = parse_args(providers)
-
+def main(args):
     auth_class = (
         get_available_providers()[args.auth_provider]
         if args.auth_provider
@@ -480,11 +477,32 @@ def parse_args(providers):
 
 
 def cli():
+    args = None
     try:
-        main()
-    except Exception as e:
-        logger.exception("An error occurred", error=str(e))
-        sys.exit(1)
+        providers = get_available_providers()
+        args = parse_args(providers)
+        main(args)
+    except Exception as ex:
+        if args and args.verbose >= 2:
+            logger.exception("An error occurred", error=str(ex))
+            sys.exit(1)
+
+        # For non-verbose output, just print the error message without the stack trace
+        # Handle airflow_client exceptions with more user-friendly messages
+        if isinstance(ex, requests.exceptions.RequestException):
+            logger.error(
+                "Network error occurred while connecting to Airflow API",
+                error=str(ex),
+            )
+        elif isinstance(ex, airflow_client.client.ApiException):
+            logger.error(
+                "API error occurred while communicating with Airflow API",
+                status=ex.status,
+                reason=ex.reason,
+                body=ex.body,
+            )
+        else:
+            logger.error("An error occurred", error=str(ex))
 
 
 if __name__ == "__main__":

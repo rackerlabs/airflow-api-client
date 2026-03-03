@@ -144,7 +144,7 @@ class XComEntry:
             f" '{dag_run.id}' with key '{key}'"
         )
         xcom_entry_data = app.client._xCom_api.get_xcom_entry(
-            dag_id=dag.id, task_id=task_instance.task_id, dag_run_id=dag_run.id, xcom_key=key
+            dag_id=dag.id, task_id=task_instance.id, dag_run_id=dag_run.id, xcom_key=key
         ).actual_instance
         return cls(
             app=app,
@@ -277,7 +277,7 @@ class TaskInstance:
         # Getting all XCom entries for the task instance
 
         xcom_entries_data = self.app.client._xCom_api.get_xcom_entries(
-            dag_id=self.dag.id, task_id=self.task_id, dag_run_id=self.dag_run.id
+            dag_id=self.dag.id, task_id=self.id, dag_run_id=self.dag_run.id
         ).xcom_entries
 
         for entry in xcom_entries_data:
@@ -306,12 +306,14 @@ class DAGRun:
     a string.
     """
 
-    def __init__(self, app: "App", dag: "DAG", run_id: str) -> None:
+    def __init__(
+        self, app: "App", dag: "DAG", run_id: str, dag_run: Optional[DAGRunResponse] = None
+    ) -> None:
         self.app = app
         self.dag = dag
         self.id = run_id
         self._has_finished = False  # To keep track of whether we need to re-fetch the attributes
-        self._attributes = None
+        self._dag_run = dag_run
 
     def __repr__(self) -> str:
         """Return a string representation of the DAGRun instance, including the DAG ID and run
@@ -319,19 +321,39 @@ class DAGRun:
         return f"DAGRun(dag='{self.dag}', run_id='{self.id}'"
 
     @property
-    def attributes(self) -> DAGRunResponse:
+    def dag_run(self) -> DAGRunResponse:
         """Lazily load the DAG run attributes from the Airflow API if they haven't been loaded yet,
         and return the attributes. If the DAG run has finished, we can return the cached attributes
         without re-fetching from the API, since the state won't change anymore.
         """
-        if self._attributes is not None and self._has_finished:
-            return self._attributes
+        if self._dag_run is not None and self._has_finished:
+            return self._dag_run
         logger.debug(f"Fetching attributes for DAG run '{self.dag.id}' from Airflow API")
-        self._attributes = self.app.client._DAG_run_api.get_dag_run(
+        self._dag_run = self.app.client._DAG_run_api.get_dag_run(
             dag_id=self.dag.id, dag_run_id=self.id
         )
 
-        return self._attributes
+        return self._dag_run
+
+    def __getattr__(self, item) -> Any:
+        """Delegate attribute access to the underlying DAG run attributes object. If the DAG run
+        attributes haven't been loaded yet, we need to fetch them from the Airflow API before
+        trying to access the attribute. If the attribute still isn't found after fetching the DAG
+        run attributes, we raise an AttributeError to indicate that the attribute doesn't exist on
+        the DAG run object.
+        """
+        try:
+            return getattr(self.dag_run, item)
+        except AttributeError:
+            if not isinstance(self._dag_run, DAGRunResponse):
+                self._dag_run = self.app.client._DAG_run_api.get_dag_run(
+                    dag_id=self.dag.id, dag_run_id=self.id
+                )
+                try:
+                    return getattr(self._dag_run, item)
+                except AttributeError:
+                    pass
+            raise AttributeError(f"'DAGRun' object has no attribute '{item}'") from None
 
     @property
     def state(self) -> str:
@@ -341,8 +363,8 @@ class DAGRun:
         up-to-date information.
         """
         if self._has_finished:
-            return self.attributes.state
-        if (state := self.attributes.state) in TERMINAL_DAGRUN_STATES:
+            return self.dag_run.state
+        if (state := self.dag_run.state) in TERMINAL_DAGRUN_STATES:
             self._has_finished = True
         return state
 
@@ -397,7 +419,7 @@ class DAG:
 
     def __repr__(self) -> str:
         """Return a string representation of the DAG instance, including the DAG ID."""
-        return f"DAG(dag_id='{self.dag_id}')"
+        return f"DAG(dag_id='{self.id}')"
 
     def run(
         self, run_id: Optional[Union[str, None]] = None, conf: Optional[Union[Dict, None]] = None
@@ -408,9 +430,9 @@ class DAG:
         the DAG run.
         """
         now_utc = datetime.now(timezone.utc)
-        run_id = f"manual__{int(now_utc.timestamp())}"
+        run_id = run_id or f"manual__{int(now_utc.timestamp())}"
         payload = {
-            "conf": conf["conf"],
+            "conf": conf["conf"] if conf is not None else None,
             "dag_run_id": run_id,
             "logical_date": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }

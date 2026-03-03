@@ -3,55 +3,73 @@
 import json
 import time
 from pathlib import Path
-from typing import Dict, Optional, Union
 
-from airflow_api_client.commands import create_payload, xcom
+from airflow_api_client.commands import Command
 from airflow_api_client.log import logger
 from airflow_api_client.models import DAG, DAGRun
+from airflow_api_client.typedefs import App
+
+DESCRIPTION = """
+Command to trigger a DAG run with an optional payload. The response is printed to the console
+in the specified output format (JSON, YAML, or human-readable). If a payload is provided, it is
+used as the `conf` for the DAG run. If no payload is provided, the user is prompted to enter
+values for each parameter defined in the DAG's parameters. After triggering the DAG, the command
+polls for completion and retrieves any XCom entries associated with the DAG run.
+"""
 
 
-def run_dag(app, dag_id, conf: Optional[Union[None, str, Dict]] = None) -> DAGRun:
-    """Triggers a DAG with an optional payload. The response is printed to the console in the
-    specified output format (JSON, YAML, or human-readable). If a payload is provided, it is used as
-    the `conf` for the DAG run. If no payload is provided, the user is prompted to enter values for
-    each parameter defined in the DAG's parameters. After triggering the DAG, the function polls for
-    completion and retrieves any XCom entries associated with the DAG run.
-    """
+class RunDagCommand(Command):
+    """Command to trigger a DAG run with an optional payload."""
 
-    conf = app.args.conf
+    name = "run"
+    help = DESCRIPTION
 
-    dag = DAG(app, dag_id)
+    @classmethod
+    def add_arguments(cls, parser) -> None:
+        parser.add_argument("dag_id", help="DAG ID to run")
+        parser.add_argument("--conf", "-c", type=str, help="JSON conf or @file")
 
-    if conf is None:
-        conf = create_payload.get_payload_for_dag(app, dag_id, dag=dag)
-    else:
-        if conf.startswith("@"):
-            conf_path = Path(conf[1:]).absolute()
-            if not conf_path.is_file():
-                logger.error("Conf file not found", path=str(conf_path))
-                raise FileNotFoundError(f"Conf file not found: {conf_path}")
-            with open(conf_path, "r", encoding="utf-8") as f:
-                conf = f.read()
-        conf = {"conf": json.loads(conf)}
+    def execute(self, app: App, **kwargs) -> None:
+        """Triggers a DAG with an optional payload. The response is printed to the console in the
+        specified output format (JSON, YAML, or human-readable). If a payload is provided, it is
+        used as the `conf` for the DAG run. If no payload is provided, the user is prompted to
+        enter values for each parameter defined in the DAG's parameters. After triggering the DAG,
+        the function polls forcompletion and retrieves any XCom entries associated with the DAG run.
+        """
+        logger.debug("Executing RunDagCommand")
 
-    try:
-        conf = json.loads(conf) if isinstance(conf, str) else conf
-    except json.JSONDecodeError as e:
-        logger.error("Invalid JSON provided for --conf", error=str(e))
-        raise
+        conf = app.args.conf
 
-    dag_run: DAGRun = dag.run(conf=conf)
+        dag = DAG(app, app.args.dag_id)
 
-    # Poll for completion. Prefer this over calling airflow_client's wait_dag_run_until_finished
-    # until that's no longer marked as experimental.
-    while (current_state := dag_run.state) not in ("success", "failed"):
-        logger.debug("Polling for DAG run completion", dag_id=dag_id, state=current_state)
-        time.sleep(2)
+        if conf is None:
+            conf = dag.create_payload()
+        else:
+            if conf.startswith("@"):
+                conf_path = Path(conf[1:]).absolute()
+                if not conf_path.is_file():
+                    logger.error("Conf file not found", path=str(conf_path))
+                    raise FileNotFoundError(f"Conf file not found: {conf_path}")
+                with conf_path.open("r", encoding="utf-8") as f:
+                    conf = f.read()
+            conf = {"conf": json.loads(conf)}
 
-    logger.info("DAG run completed", dag_id=dag_id, final_state=dag_run.state)
+        try:
+            conf = json.loads(conf) if isinstance(conf, str) else conf
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON provided for --conf", error=str(e))
+            raise
 
-    xcom.get_xcom(app, f"{dag_id}:{dag_run.run_id}")
+        dag_run: DAGRun = dag.run(conf=conf)
 
-    return dag_run
+        # Poll for completion. Prefer this over calling airflow_client's wait_dag_run_until_finished
+        # until that's no longer marked as experimental.
+        while (current_state := dag_run.state) not in ("success", "failed"):
+            logger.debug("Polling for DAG run completion", dag=dag, state=current_state)
+            time.sleep(2)
 
-    # self.get_xcom(f"{dag_id}:{dag_run_id}")
+        logger.info("DAG run completed", dag=dag, final_state=dag_run.state)
+
+        dag_run.xcoms.output()
+
+        return dag_run

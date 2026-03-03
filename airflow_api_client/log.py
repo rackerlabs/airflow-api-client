@@ -8,6 +8,8 @@ import sys
 
 import structlog
 
+LOG_STREAM = sys.stderr
+
 
 class PrettyJSON(str):
     """A string wrapper that is used to indicate that the string should be rendered as-is in the
@@ -30,16 +32,15 @@ def pretty_collections(_, __, event_dict):
 
 def get_logger() -> structlog.BoundLogger:
     """Configure structlog to pretty-print logs to the console."""
-    log_stream = sys.stderr
 
     structlog.configure(
         processors=[
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.add_log_level,
             pretty_collections,
-            structlog.dev.ConsoleRenderer(colors=log_stream.isatty()),
+            structlog.dev.ConsoleRenderer(colors=LOG_STREAM.isatty()),
         ],
-        logger_factory=structlog.PrintLoggerFactory(file=log_stream),
+        logger_factory=structlog.PrintLoggerFactory(file=LOG_STREAM),
     )
 
     return structlog.get_logger()
@@ -53,3 +54,26 @@ def set_log_level(verbose: int) -> None:
     levels = [logging.WARNING, logging.INFO, logging.DEBUG]
     level = levels[min(verbose, len(levels) - 1)]
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(level))
+    if level != logging.DEBUG:
+        return
+
+    # Add callsite information (filename, line number, function name) to the log output when in
+    # DEBUG mode
+    config = structlog.get_config()
+    processors = list(config["processors"])
+    if not any(isinstance(p, structlog.processors.CallsiteParameterAdder) for p in processors):
+        processors.insert(
+            0,
+            structlog.processors.CallsiteParameterAdder(
+                [
+                    structlog.processors.CallsiteParameter.FILENAME,
+                    structlog.processors.CallsiteParameter.LINENO,
+                    structlog.processors.CallsiteParameter.FUNC_NAME,
+                ]
+            ),
+        )
+        structlog.configure(
+            processors=processors,
+            wrapper_class=structlog.make_filtering_bound_logger(level),
+            logger_factory=structlog.PrintLoggerFactory(file=LOG_STREAM),
+        )

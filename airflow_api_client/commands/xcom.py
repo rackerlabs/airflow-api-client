@@ -1,101 +1,54 @@
 """Code related to the xcom sub-command"""
 
-from typing import Any, Dict, List, Union
-
-import airflow_client.client
-
+from airflow_api_client.commands import Command
 from airflow_api_client.log import logger
-from airflow_api_client.models import DAGRun, TaskInstance, XComEntry
-from airflow_api_client.output import output
+from airflow_api_client.models import XComSpec
 from airflow_api_client.typedefs import App
 
 
-def _get_xcom(
-    app: App,
-    dag_id: str,
-    dag_run_id: str,
-    task_id: Union[str, None] = None,
-    key: Union[str, None] = None,
-) -> List[airflow_client.client.models.response_get_xcom_entry.ResponseGetXcomEntry]:
-    # Retrieves the value of an XCom entry for a given DAG run and task. The xcom_spec should be
-    logger.debug(
-        "Retrieving XCom entry", dag_id=dag_id, dag_run_id=dag_run_id, task_id=task_id, key=key
-    )
+class XComCommand(Command):
+    """Command to retrieve XCom entries"""
 
-    if task_id:  # Covers dag_id:dag_run_id:task_id and dag_id:dag_run_id:task_id:key
-        ti = TaskInstance(app, dag_id, dag_run_id, task_id)
-        return ti.get_xcom_entries(key=key)
+    name = "xcom"
+    help = "Retrieve XCom entries"
 
-    # dag_id:dag_run_id
-    entries = []
-    dag_run = DAGRun(app, dag_id, dag_run_id)
-    for ti in dag_run.task_instances:
-        entries.extend(ti.get_xcom_entries(key=key))
-    return entries
-
-
-def get_xcom(app: App, xcom_spec: str) -> Union[None, Dict[str, Any]]:
-    """Retrieves XCom entries based on the provided specification. The xcom_spec should be in
-    the format DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]. Depending on the level of specificity in the
-    xcom_spec, it retrieves the corresponding XCom entries and formats the output
-    """
-    parts = xcom_spec.split(":")
-    if len(parts) < 2:
-        logger.error(
-            "Invalid xcom specification format",
-            expected_format="DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]",
+    @classmethod
+    def add_arguments(cls, parser) -> None:
+        parser.add_argument(
+            "xcom_spec",
+            metavar="DAG_ID:RUN_ID[:TASK_ID[:KEY]]",
+            help=(
+                "Retrieve the value of the 'return_value' XCom for the specified DAG run."
+                " The format should be DAG_ID:DAG_RUN_ID:TASK_ID. This is useful for retrieving"
+                " results from a DAG run after it has completed. If the specified DAG run or task"
+                " does not exist. Only DAG_ID:DAG_RUN_ID is required, if TASK_ID and KEY are"
+                " omitted, the client will attempt to retrieve all xcom entries for all tasks."
+                " If only KEY is omitted, it will attempt to retrieve all xcom entries for the"
+                " specified task."
+            ),
         )
-        raise ValueError(
-            "Invalid xcom specification format. Expected DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]"
-        )
-    dag_id, dag_run_id = parts[0], parts[1]
-    task_id = parts[2] if len(parts) > 2 else None
-    key = parts[3] if len(parts) > 3 else None
 
-    logger.debug(
-        f"Getting XCom entry with specification {xcom_spec}",
-        dag_id=dag_id,
-        dag_run_id=dag_run_id,
-        task_id=task_id,
-        key=key,
-    )
+    def execute(self, app: App, **kwargs) -> None:
+        logger.debug("Executing XComCommand with arguments", xcom_spec=app.args.xcom_spec)
+        # xcom.get_xcom(app, app.args.xcom_spec)
+        spec = XComSpec.from_string(app, app.args.xcom_spec)
 
-    entries: List[XComEntry] = []
+        logger.debug(f"Getting XCom entry with specification {app.args.xcom_spec}", spec=spec)
 
-    if task_id:  # Covers dag_id:dag_run_id:task_id and dag_id:dag_run_id:task_id:key
-        ti = TaskInstance(app, dag_id, dag_run_id, task_id)
-        entries.extend(ti.get_xcom_entries(key=key))
-    else:  # dag_id:dag_run_id
-        entries = []
-        dag_run = DAGRun(app, dag_id, dag_run_id)
-        for ti in dag_run.task_instances:
-            entries.extend(ti.get_xcom_entries(key=key))
-
-    if not entries:
-        logger.warning("No XCom entries found for the specified specification", xcom_spec=xcom_spec)
-        return None
-
-    entries.sort(key=lambda e: e.timestamp)
-    if app.args.output_format in ("json", "yaml"):
-        dagrun_output = {"dag_id": dag_id, "dag_run_id": dag_run_id}
-        for entry in entries:
-            dagrun_output.setdefault("tasks", {}).setdefault(entry.task_id, {})[entry.key] = {
-                "value": entry.value,
-                "timestamp": entry.timestamp,
-            }
-        output(dagrun_output, app.args)
-        return dagrun_output
-
-    # Standard human-readable output, sorted by timestamp
-    for entry in entries:
-        headers = ["Task ID", "Key", "Timestamp", "Value"]
-        data = [
-            [
-                entry.task_id,
-                entry.key,
-                entry.timestamp,
-                entry.value,
-            ]
-        ]
-        output(data, app.args, headers=headers)
-    return None
+        if spec.task_instance:  # Covers dag_id:dag_run_id:task_id and dag_id:dag_run_id:task_id:key
+            logger.debug(
+                "Retrieving XCom entries for specific task",
+                dag=spec.dag,
+                dag_run=spec.dag_run,
+                task=spec.task_instance,
+                key=spec.key,
+            )
+            spec.task_instance.get_xcom_entries(key=spec.key).output()
+        else:  # dag_id:dag_run_id
+            logger.debug(
+                "Retrieving XCom entries for entire DAG run",
+                dag=spec.dag,
+                dag_run=spec.dag_run,
+                key=spec.key,
+            )
+            spec.dag_run.xcoms.output()

@@ -5,28 +5,34 @@
 # This is a client for Airflow 3.1 and the RAW environment
 import argparse
 import configparser
-import json
+import importlib
+import inspect
 import os
 import sys
 from functools import cached_property
-from importlib.metadata import entry_points
+from importlib.metadata import PackageNotFoundError, entry_points, version
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Type, Union
 
 import airflow_client.client
 import requests
 
 from airflow_api_client.auth import AirflowAPIClientAuthProvider
-from airflow_api_client.commands import create_payload, run, xcom
+from airflow_api_client.commands import Command
 from airflow_api_client.log import logger, set_log_level
-from airflow_api_client.models import DAGBag
-from airflow_api_client.output import output, yaml
+from airflow_api_client.output import yaml
 from airflow_api_client.typedefs import App
+
+try:
+    __version__ = version("airflow-api-client")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 
 PAYLOADS_PATH = Path(__file__).parent / "payloads"
 
 
-def get_available_providers():
+def get_available_providers() -> Dict[str, Type[AirflowAPIClientAuthProvider]]:
     """Get all available auth providers."""
     providers = {}
     eps = entry_points(group="airflow_api_client.auth")
@@ -34,6 +40,40 @@ def get_available_providers():
         providers[ep.name] = ep.load()
     providers["default"] = AirflowAPIClientAuthProvider
     return providers
+
+
+def builtin_commands() -> Dict[str, Type[Command]]:
+    """Discover and return all built-in command classes defined in the commands directory."""
+    commands = {}
+    commands_dir = Path(__file__).parent / "commands"
+
+    for file in commands_dir.glob("*.py"):
+        if file.stem in ("__init__", "base"):
+            continue
+
+        module = importlib.import_module(f"airflow_api_client.commands.{file.stem}")
+
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if issubclass(obj, Command) and obj is not Command:
+                commands[obj.name] = obj
+
+    return commands
+
+
+def get_available_commands() -> Dict[str, Type[Command]]:
+    """Get all available commands, including built-in and plugin commands."""
+    commands = {}
+
+    # Register built-in commands
+    for cmd_name, cmd_class in builtin_commands().items():
+        commands[cmd_name] = cmd_class
+
+    # Discover plugin commands (optional)
+    for ep in entry_points(group="airflow_api_client.commands"):
+        logger.debug("Loading plugin command", command=ep.name, module=ep.module)
+        commands[ep.name] = ep.load()
+
+    return commands
 
 
 class Client(airflow_client.client.ApiClient):
@@ -48,7 +88,7 @@ class Client(airflow_client.client.ApiClient):
         auth.set_client_configuration(client_configuration)
         super().__init__(client_configuration)
 
-    def _make_raw_request(self, method, path, **kwargs):
+    def _make_raw_request(self, method, path, **kwargs) -> Union[Dict[str, Any], List[Any]]:
         headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -79,33 +119,7 @@ class Client(airflow_client.client.ApiClient):
     # pylint: enable=invalid-name
 
 
-def list_dags(app: App) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
-    """Lists all DAGs in the Airflow instance. Retrieves all DAGs using the DAGBag class and
-    formats the output based on the specified output format (JSON, YAML, or human-readable table).
-    """
-    all_dags = DAGBag(app).get_all_dags(details=False)
-    if app.args.output_format in ("json", "yaml"):
-        output({"dags": [d.to_dict() for d in all_dags]}, app.args)
-    else:
-        headers = ["DAG ID", "Display Name", "Is Paused", "Owners", "Tags", "Next Dag Run"]
-        data = []
-        for dag in all_dags:
-            data.append(
-                [
-                    dag.dag_id,
-                    dag.dag_display_name,
-                    "Yes" if dag.is_paused else "No",
-                    ", ".join(dag.owners),
-                    ", ".join([t.name for t in dag.tags]),
-                    dag.next_dagrun_logical_date,
-                ]
-            )
-        output(data, app.args, headers=headers)
-
-    return {"dags": [d.to_dict() for d in all_dags]}
-
-
-def main(args):
+def main(commands, args) -> None:
     """Main function that initializes the client and executes the specified command based on the
     command-line arguments. It first determines the authentication provider to use based on the
     command-line arguments and configuration, then initializes the API client with the chosen
@@ -122,19 +136,11 @@ def main(args):
 
     app = App(Client(auth, args), args)
 
-    if args.command == "list":
-        list_dags(app)
-    elif args.command == "run":
-        run.run_dag(app, args.dag_id, conf=args.conf)
-    elif args.command == "create-payload":
-        payload = create_payload.get_payload_for_dag(app, args.dag_id)
-        output(json.dumps(payload, indent=4, sort_keys=True, default=str), args)
-    elif args.command == "xcom":
-        xcom.get_xcom(app, args.xcom_spec)
-    return True
+    cmd = commands[args.command]()
+    cmd.execute(app)
 
 
-def parse_args(providers):
+def parse_args(commands, providers):
     """Initial argument parsing to get profile and config file for loading potential configuration
     file before the main argument parsing, allowing config file values to be used as defaults in
     the main parser.
@@ -164,6 +170,7 @@ def parse_args(providers):
         config.read(config_path)
 
     parser = argparse.ArgumentParser(description="RAW client", allow_abbrev=False)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--auth-provider",
         type=str,
@@ -238,38 +245,11 @@ def parse_args(providers):
         help="Output format for commands that return data",
     )
 
+    # Let commands add their own subparsers and arguments
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
-
-    # xcom subcommand
-    xcom_parser = subparsers.add_parser("xcom", help="Get XCom entries")
-    xcom_parser.add_argument(
-        "xcom_spec",
-        metavar="DAG_ID:RUN_ID[:TASK_ID[:KEY]]",
-        help=(
-            "Retrieve the value of the 'return_value' XCom for the specified DAG run."
-            " The format should be DAG_ID:DAG_RUN_ID:TASK_ID. This is useful for retrieving results"
-            " from a DAG run after it has completed. If the specified DAG run or task does not"
-            "exist. Only DAG_ID:DAG_RUN_ID is required, if TASK_ID and KEY are omitted, the client"
-            "will attempt to retrieve all xcom entries for all tasks. If only KEY is omitted, it"
-            " will attempt to retrieve all xcom entries for the specified task."
-        ),
-    )
-
-    # create-payload subcommand
-
-    subparsers.add_parser("list", help="List DAGs")
-    run_parser = subparsers.add_parser("run", help="Run a DAG")
-    run_parser.add_argument("dag_id", help="DAG ID to run")
-    run_parser.add_argument("--conf", "-c", type=str, help="JSON conf or @file")
-
-    payload_parser = subparsers.add_parser(
-        "create-payload",
-        help=(
-            "Create a payload for the specified DAG and exit. The payload will be printed"
-            " to stderr the console (for easy redirection to a file if desired)"
-        ),
-    )
-    payload_parser.add_argument("dag_id", help="DAG ID")
+    for cmd_class in commands.values():
+        cmd_parser = subparsers.add_parser(cmd_class.name, help=cmd_class.help)
+        cmd_class.add_arguments(cmd_parser)
 
     # Let auth providers add their own arguments to the parser
     for provider_class in providers.values():
@@ -305,8 +285,9 @@ def cli():
     args = None
     try:
         providers = get_available_providers()
-        args = parse_args(providers)
-        main(args)
+        commands = get_available_commands()
+        args = parse_args(commands, providers)
+        main(commands, args)
     except Exception as ex:  # pylint: disable=broad-except
         if args and args.verbose >= 2:
             logger.exception("An error occurred", error=str(ex))
@@ -327,7 +308,7 @@ def cli():
                 body=ex.body,
             )
         else:
-            logger.error("An error occurred", error=str(ex))
+            logger.error("An error occurred", error=str(ex), exc_info=True)
 
         sys.exit(1)
 

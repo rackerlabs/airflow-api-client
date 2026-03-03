@@ -67,6 +67,7 @@ class AirflowAPIClientAuthProvider:
     def __init__(self, args):
         self.args = args
         self._token = None
+        self.timeout = 10
 
     @property
     def password(self) -> str:
@@ -102,9 +103,10 @@ class AirflowAPIClientAuthProvider:
                 "username": self.username,
                 "password": self.password,
             },
-            timeout=10,
+            timeout=self.timeout,
         )
-        return AirflowClientJWTToken(response.json()["access_token"])
+        self._token = AirflowClientJWTToken(response.json()["access_token"])
+        return self._token
 
     def set_client_configuration(self, client: "ApiClient") -> None:
         """Configures the Airflow API client with the appropriate authentication headers. This

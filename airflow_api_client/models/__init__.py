@@ -2,17 +2,22 @@
 Airflow entities via the Airflow API.
 """
 
+import json
+import sys
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Union
 
 from airflow_client.client.models import (
     DAGDetailsResponse,
+    DAGRunResponse,
     DagRunState,
     ResponseGetXcomEntry,
+    TaskInstanceResponse,
     TriggerDAGRunPostBody,
 )
 
 from airflow_api_client.log import logger
+from airflow_api_client.output import output
 
 if TYPE_CHECKING:
     from airflow_api_client import App
@@ -24,28 +29,91 @@ TERMINAL_DAGRUN_STATES = {DagRunState.SUCCESS, DagRunState.FAILED}
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 
+class XComSpec:
+    """A class representing the specification for retrieving XCom entries, including the DAG ID, run
+    ID, optional task ID, and optional key. This class is used to parse and validate the XCom
+    specification provided by the user.
+    """
+
+    def __init__(
+        self,
+        app: "App",
+        dag: "DAG",
+        dag_run: "DAGRun",
+        task_instance: "TaskInstance",
+        key: Optional[Union[str, None]] = None,
+    ) -> None:
+        self.app = app
+        self.dag = dag
+        self.dag_run = dag_run
+        self.task_instance = task_instance
+        self.key = key
+
+    def __repr__(self) -> str:
+        """Return a string representation of the XComSpec instance, including the DAG ID, run ID,
+        optional task ID, and optional key.
+        """
+        task_id = self.task_instance.id if self.task_instance else None
+        return (
+            f"XComSpec(dag_id='{self.dag.id}', run_id='{self.dag_run.id}',"
+            f" task_id='{task_id}', key='{self.key}')"
+        )
+
+    @classmethod
+    def from_string(cls, app: "App", spec: str) -> "XComSpec":
+        """Parse an XCom specification string in the format DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]] and
+        return an XComSpec instance with the corresponding attributes. If the specification string
+        is not in the correct format, raise a ValueError with a descriptive error message.
+        """
+        parts = spec.split(":")
+        if len(parts) < 2:
+            logger.error(
+                "Invalid xcom specification format",
+                expected_format="DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]",
+            )
+            raise ValueError(
+                "Invalid xcom specification format. Expected DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]"
+            )
+        dag_id, run_id = parts[0], parts[1]
+        task_id = parts[2] if len(parts) > 2 else None
+        key = parts[3] if len(parts) > 3 else None
+
+        dag = DAG(app, dag_id)
+        dag_run = DAGRun(app, dag, run_id)
+        task_instance = TaskInstance(app, dag, dag_run, task_id) if task_id is not None else None
+
+        return cls(app, dag, dag_run, task_instance, key)
+
+
 class XComEntry:
     """A class representing an XCom entry in Airflow, providing lazy loading of the XCom data and
     delegation of attribute access to the underlying XCom data object.
     """
 
     def __init__(
-        self, app: "App", dag_id: str, task_id: str, run_id: str, key: str, xcom_data=None
+        self,
+        app: "App",
+        dag: "DAG",
+        dag_run: "DAGRun",
+        task_instance: "TaskInstance",
+        key: str,
+        xcom_data=None,
     ) -> None:
         self.app = app
-        self.dag_id = dag_id
-        self.task_id = task_id
-        self.run_id = run_id
+        self.dag = dag
+        self.dag_run = dag_run
+        self.task_instance = task_instance
         self.key = key
         self._xcom_data = xcom_data
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the XComEntry instance, including the key, DAG ID, task
         ID, and run ID.
         """
         return (
-            f"xcom_entry(key='{self.key}', dag_id='{self.dag_id}',"
-            f" task_id='{self.task_id}', run_id='{self.run_id}')"
+            f"xcom_entry(key='{self.key}', dag_id='{self.dag.id}',"
+            f" task_id'{self.task_instance.task_instance.id}',"
+            f" run_id='{self.dag_run.id}')"
         )
 
     @property
@@ -55,7 +123,10 @@ class XComEntry:
         """
         if self._xcom_data is None:
             self._xcom_data = self.app.client._xCom_api.get_xcom_entry(
-                dag_id=self.dag_id, task_id=self.task_id, dag_run_id=self.run_id, xcom_key=self.key
+                dag_id=self.dag.id,
+                task_id=self.task_instance.id,
+                dag_run_id=self.dag_run.id,
+                xcom_key=self.key,
             ).actual_instance
         return self._xcom_data
 
@@ -64,25 +135,78 @@ class XComEntry:
         return getattr(self.xcom_data, item)
 
     @classmethod
-    def from_key(cls, app: "App", dag_id: str, task_id: str, run_id: str, key: str) -> "XComEntry":
+    def from_key(
+        cls, app: "App", dag: "DAG", task_instance: "TaskInstance", dag_run: "DAGRun", key: str
+    ) -> "XComEntry":
         """Fetch a single XCom entry for the given key from the Airflow API."""
         logger.debug(
-            f"Fetching XCom entry for task '{task_id}' in DAG run '{run_id}' with key '{key}'"
+            f"Fetching XCom entry for task '{task_instance.id}' in DAG run"
+            f" '{dag_run.id}' with key '{key}'"
         )
         xcom_entry_data = app.client._xCom_api.get_xcom_entry(
-            dag_id=dag_id, task_id=task_id, dag_run_id=run_id, xcom_key=key
+            dag_id=dag.id, task_id=task_instance.task_id, dag_run_id=dag_run.id, xcom_key=key
         ).actual_instance
         return cls(
             app=app,
-            dag_id=dag_id,
-            task_id=task_id,
-            run_id=run_id,
+            dag=dag,
+            task_instance=task_instance,
+            dag_run=dag_run,
             key=key,
             xcom_data=xcom_entry_data,
         )
 
 
-# pylint: enable=too-many-arguments,too-many-positional-arguments
+class XComEntryList:
+    """A class representing a list of XCom entries for a given list of entries"""
+
+    def __init__(
+        self, app: "App", dag: "DAG", dag_run: "DAGRun", xcoms: Optional[List[XComEntry]] = None
+    ) -> None:
+        self.app = app
+        self.dag = dag
+        self.dag_run = dag_run
+        self.xcoms = xcoms or []
+
+    def add(self, entry: XComEntry) -> None:
+        """Add an XComEntry to the list of entries"""
+        self.xcoms.append(entry)
+
+    def __iter__(self) -> Iterator[XComEntry]:
+        """Return an iterator over the list of XCom entries"""
+        return iter(self.xcoms)
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Return the list of XCom entries as a dictionary, grouped by task ID and key"""
+        _output = {"dag_id": self.dag.id, "dag_run_id": self.dag_run.id, "tasks": {}}
+        for xcom in self.xcoms:
+            _output["tasks"].setdefault(xcom.task_instance.id, {})[xcom.key] = {
+                "value": xcom.value,
+                "timestamp": xcom.timestamp,
+            }
+        return _output
+
+    def output(self) -> None:
+        """Output the list of XCom entries in the specified output format (JSON, YAML, or
+        human-readable). The output is grouped by task ID and key, and includes the value and
+        timestamp for each XCom entry. If the output format is JSON or YAML, the output is printed
+        as a single structured document. If the output format is human-readable, the output is
+        printed as a table with columns for task ID, key, timestamp, and value, sorted by timestamp.
+        """
+
+        if self.app.args.output_format in ("json", "yaml"):
+            output(self.as_dict(), self.app.args)
+        else:
+            headers = ["Task ID", "Key", "Timestamp", "Value"]
+            for xcom in self:
+                data = [
+                    [
+                        xcom.task_instance.id,
+                        xcom.key,
+                        xcom.timestamp,
+                        xcom.value,
+                    ]
+                ]
+                output(data, self.app.args, headers=headers)
 
 
 class TaskInstance:
@@ -90,52 +214,90 @@ class TaskInstance:
     for the task instance and to represent the task instance as a string.
     """
 
-    def __init__(self, app: "App", dag_id: str, run_id: str, task_id: str) -> None:
+    def __init__(
+        self,
+        app: "App",
+        dag: "DAG",
+        dag_run: "DAGRun",
+        task_id: str,
+        task_instance: Optional["TaskInstance"] = None,
+    ) -> None:
         self.app = app
-        self.dag_id = dag_id
-        self.task_id = task_id
-        self.run_id = run_id
+        self.dag = dag
+        self.id = task_id
+        self.dag_run = dag_run
+        self._task_instance = task_instance
 
-    def get_xcom_entries(self, key: Optional[Union[None, str]] = None) -> list[XComEntry]:
+    @property
+    def task_instance(self) -> TaskInstanceResponse:
+        """Lazily load the task instance details from the Airflow API if they haven't been loaded
+        yet, and return the underlying task instance details object.
+        """
+        if self._task_instance is None:
+            logger.debug(
+                f"Fetching details for task instance '{self.id}' in DAG run '{self.dag_run.id}'"
+                f" of DAG '{self.dag.id}' from Airflow API"
+            )
+            self._task_instance = self.app.client._task_instance_api.get_task_instance(
+                dag_id=self.dag.id, dag_run_id=self.dag_run.id, task_id=self.id
+            )
+        return self._task_instance
+
+    def __getattr__(self, item) -> Any:
+        """Delegate attribute access to the underlying DAG details object. If the DAG details
+        haven't been loaded yet, we need to fetch them from the Airflow API before trying to access
+        the attribute. If the attribute still isn't found after fetching the DAG details, we raise
+        an AttributeError to indicate that the attribute doesn't exist on the DAG object.
+        """
+        return getattr(self.task_instance, item)
+
+    def get_xcom_entries(self, key: Optional[Union[None, str]] = None) -> XComEntryList:
         """Fetch XCom entries for this task instance from the Airflow API. If a key is provided,
         fetch only the XCom entry for that key; otherwise, fetch all XCom entries
         for this task instance.
         """
+        xcoms = XComEntryList(self.app, self.dag, self.dag_run)
         if key is not None:
             logger.debug(
-                f"Fetching XCom entries for task '{self.task_id}' in DAG run"
-                f" '{self.run_id}' with key '{key}'"
+                f"Fetching XCom entries for task '{self.id}' in DAG run"
+                f" '{self.dag_run.id}' with key '{key}'"
             )
-            return [
+
+            xcoms.add(
                 XComEntry.from_key(
                     app=self.app,
-                    dag_id=self.dag_id,
-                    task_id=self.task_id,
-                    run_id=self.run_id,
+                    dag=self.dag,
+                    dag_run=self.dag_run,
+                    task_instance=self,
                     key=key,
                 )
-            ]
+            )
+            return xcoms
+
+        # Getting all XCom entries for the task instance
 
         xcom_entries_data = self.app.client._xCom_api.get_xcom_entries(
-            dag_id=self.dag_id, task_id=self.task_id, dag_run_id=self.run_id
+            dag_id=self.dag.id, task_id=self.task_id, dag_run_id=self.dag_run.id
         ).xcom_entries
 
-        return [
-            XComEntry.from_key(
-                app=self.app,
-                dag_id=self.dag_id,
-                task_id=self.task_id,
-                run_id=self.run_id,
-                key=entry.key,
+        for entry in xcom_entries_data:
+            xcoms.add(
+                XComEntry.from_key(
+                    app=self.app,
+                    dag=self.dag,
+                    dag_run=self.dag_run,
+                    task_instance=self,
+                    key=entry.key,
+                )
             )
-            for entry in xcom_entries_data
-        ]
 
-    def __repr__(self):
-        return (
-            f"TaskInstance(dag_id='{self.dag_id}', task_id='{self.task_id}',"
-            f" run_id='{self.run_id}')"
-        )
+        return xcoms
+
+    def __repr__(self) -> str:
+        return f"TaskInstance(dag='{self.dag}', task_id='{self.id}'," f" dag_run='{self.dag_run}')"
+
+
+# pylint: enable=too-many-arguments,too-many-positional-arguments
 
 
 class DAGRun:
@@ -144,29 +306,29 @@ class DAGRun:
     a string.
     """
 
-    def __init__(self, app: "App", dag_id, run_id) -> None:
+    def __init__(self, app: "App", dag: "DAG", run_id: str) -> None:
         self.app = app
-        self.dag_id = dag_id
-        self.run_id = run_id
+        self.dag = dag
+        self.id = run_id
         self._has_finished = False  # To keep track of whether we need to re-fetch the attributes
         self._attributes = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the DAGRun instance, including the DAG ID and run
         ID."""
-        return f"DAGRun(dag_id='{self.dag_id}', run_id='{self.run_id}'"
+        return f"DAGRun(dag='{self.dag}', run_id='{self.id}'"
 
     @property
-    def attributes(self):
+    def attributes(self) -> DAGRunResponse:
         """Lazily load the DAG run attributes from the Airflow API if they haven't been loaded yet,
         and return the attributes. If the DAG run has finished, we can return the cached attributes
         without re-fetching from the API, since the state won't change anymore.
         """
         if self._attributes is not None and self._has_finished:
             return self._attributes
-        logger.debug(f"Fetching attributes for DAG run '{self.run_id}' from Airflow API")
+        logger.debug(f"Fetching attributes for DAG run '{self.dag.id}' from Airflow API")
         self._attributes = self.app.client._DAG_run_api.get_dag_run(
-            dag_id=self.dag_id, dag_run_id=self.run_id
+            dag_id=self.dag.id, dag_run_id=self.id
         )
 
         return self._attributes
@@ -187,16 +349,38 @@ class DAGRun:
     @property
     def task_instances(self) -> list[TaskInstance]:
         """Retrieve task instances for this DAG run from the Airflow API."""
-        logger.debug(f"Fetching task instances for DAG run '{self.run_id}' from Airflow API")
+        logger.debug(
+            f"Fetching task instances for DAG run '{self.id}'"
+            f" of DAG '{self.dag.id}' from Airflow API"
+        )
         task_instances_data = self.app.client._task_instance_api.get_task_instances(
-            dag_id=self.dag_id, dag_run_id=self.run_id
+            dag_id=self.dag.id, dag_run_id=self.id
         ).task_instances
+
         return [
             TaskInstance(
-                app=self.app, dag_id=self.dag_id, run_id=self.run_id, task_id=instance.task_id
+                app=self.app,
+                dag=self.dag,
+                dag_run=self,
+                task_id=instance.task_id,
+                task_instance=instance,
             )
             for instance in task_instances_data
         ]
+
+    @property
+    def xcoms(self) -> XComEntryList:
+        """Return all XCom entries for this DAG run by fetching the task
+        instances for the DAG run and then fetching the XCom entries for each task instance. If
+        `do_output` is set to `True`, the XCom entries are also printed to the console in the
+        specified output format (JSON, YAML, or human-readable) using the `output` function from the
+        `output` module.
+        """
+        xcoms = XComEntryList(self.app, self.dag, self)
+        for ti in self.task_instances:
+            for xcom in ti.get_xcom_entries():
+                xcoms.add(xcom)
+        return xcoms
 
 
 class DAG:
@@ -211,7 +395,7 @@ class DAG:
         self.id = dag_id
         self._dag = dag
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the DAG instance, including the DAG ID."""
         return f"DAG(dag_id='{self.dag_id}')"
 
@@ -236,7 +420,7 @@ class DAG:
             dag_id=self.id, trigger_dag_run_post_body=run_payload
         )
         logger.info("DAG run triggered successfully", dag_id=self.id, response=result)
-        return DAGRun(self.app, dag_id=self.dag_id, run_id=run_id)
+        return DAGRun(self.app, dag=self, run_id=run_id)
 
     @property
     def dag(self) -> DAGDetailsResponse:
@@ -250,7 +434,44 @@ class DAG:
         self._dag = self.app.client._DAG_api.get_dag_details(dag_id=self.id)
         return self._dag
 
-    def __getattr__(self, item):
+    def create_payload(self) -> Dict[str, Any]:
+        """Create a payload for triggering a DAG run by prompting the user for values for each
+        parameter defined in the DAG's parameters.
+        """
+        payload = {"conf": {}}
+
+        for key, value in self.params.items():
+            value_types = value["schema"]["type"]
+            prompt = f"Enter value for parameter: '{key}'\n"
+            prompt += f'Description: {value["description"]}'
+            prompt += f'\nType(s): {", ".join(value_types)}'
+            prompt += "\n> "
+            sys.stdout.write(prompt)
+            value = input()
+            for value_type in value_types:
+                if value_type == "null" and value == "":
+                    value = None
+                    break
+                if value_type == "integer":
+                    value = int(value)
+                elif value_type == "number":
+                    value = float(value)
+                elif value_type == "boolean":
+                    if value not in ("true", "false", "1", "0", "yes", "no"):
+                        raise ValueError(
+                            f"Invalid boolean value for parameter '{key}': '{value}'. Expected one"
+                            " of 'true', 'false', '1', '0', 'yes', or 'no'."
+                        )
+
+                    value = value.lower() in ("true", "1", "yes")
+            try:
+                payload["conf"][key] = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                payload["conf"][key] = value
+
+        return payload
+
+    def __getattr__(self, item) -> Any:
         """Delegate attribute access to the underlying DAG details object. If the DAG details
         haven't been loaded yet, we need to fetch them from the Airflow API before trying to access
         the attribute. If the attribute still isn't found after fetching the DAG details, we raise

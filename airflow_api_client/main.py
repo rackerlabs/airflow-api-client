@@ -158,7 +158,11 @@ def parse_args(commands, providers):
         help=f"Path to config file (default: {default_config_path})",
     )
     bootstrap.add_argument(
-        "--profile", "-P", type=str, help="Profile name to use from config file (default: default)"
+        "--profile",
+        "-P",
+        type=str,
+        default="default",
+        help="Profile name to use from config file (default: default)",
     )
 
     bootstrap_args, _ = bootstrap.parse_known_args()
@@ -220,7 +224,11 @@ def parse_args(commands, providers):
         help=f"Path to config file (default: {default_config_path})",
     )
     parser.add_argument(
-        "--profile", "-P", type=str, help="Profile name to use from config file (default: default)"
+        "--profile",
+        "-P",
+        type=str,
+        default="default",
+        help="Profile name to use from config file (default: default)",
     )
     parser.add_argument(
         "--endpoint",

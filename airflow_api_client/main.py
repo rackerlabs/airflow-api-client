@@ -126,6 +126,7 @@ def main(commands, args) -> None:
     authentication provider. Finally, it executes the appropriate function based on the specified
     command (list, run, create-payload, or xcom) and handles the output accordingly.
     """
+
     auth_class = (
         get_available_providers()[args.auth_provider]
         if args.auth_provider
@@ -225,10 +226,9 @@ def parse_args(commands, providers):
         "--endpoint",
         "-e",
         type=str,
-        default=config.get(
-            bootstrap_args.profile,
-            "endpoint",
-            fallback=os.getenv("AIRFLOW_API_CLIENT_ENDPOINT"),
+        default=os.getenv(
+            "AIRFLOW_API_CLIENT_ENDPOINT",
+            config.get(bootstrap_args.profile, "endpoint", fallback=None),
         ),
         help="Override the Airflow API endpoint (useful for testing against non-prod environments)",
     )

@@ -127,13 +127,17 @@ class AirflowAPIClientAuthProvider:
             "--username",
             "-u",
             type=str,
-            default=config.get(profile, "username", fallback=None),
+            default=os.getenv(
+                "AIRFLOW_API_CLIENT_USERNAME", config.get(profile, "username", fallback=None)
+            ),
             help="Airflow username (typically your SSO)",
         )
         parser.add_argument(
             "--password",
             "-p",
             type=str,
-            default=config.get(profile, "password", fallback=None),
+            default=os.getenv(
+                "AIRFLOW_API_CLIENT_PASSWORD", config.get(profile, "password", fallback=None)
+            ),
             help="Airflow password (if omitted, attempt to fetch from PWSafe",
         )

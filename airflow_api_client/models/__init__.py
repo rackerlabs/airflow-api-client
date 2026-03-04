@@ -29,7 +29,7 @@ TERMINAL_DAGRUN_STATES = {DagRunState.SUCCESS, DagRunState.FAILED}
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 
-class XComSpec:
+class ResourceSpec:
     """A class representing the specification for retrieving XCom entries, including the DAG ID, run
     ID, optional task ID, and optional key. This class is used to parse and validate the XCom
     specification provided by the user.
@@ -50,30 +50,28 @@ class XComSpec:
         self.key = key
 
     def __repr__(self) -> str:
-        """Return a string representation of the XComSpec instance, including the DAG ID, run ID,
-        optional task ID, and optional key.
+        """Return a string representation of the ResourceSpec instance, including the DAG ID, Run
+        ID and optionally task ID, and key.
         """
         task_id = self.task_instance.id if self.task_instance else None
         return (
-            f"XComSpec(dag_id='{self.dag.id}', run_id='{self.dag_run.id}',"
+            f"ResourceSpec(dag_id='{self.dag.id}', run_id='{self.dag_run.id}',"
             f" task_id='{task_id}', key='{self.key}')"
         )
 
     @classmethod
-    def from_string(cls, app: "App", spec: str) -> "XComSpec":
-        """Parse an XCom specification string in the format DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]] and
-        return an XComSpec instance with the corresponding attributes. If the specification string
-        is not in the correct format, raise a ValueError with a descriptive error message.
+    def from_string(cls, app: "App", spec: str) -> "ResourceSpec":
+        """Parse a resource specification string in the format DAG_ID/DAG_RUN_ID[/TASK_ID[/KEY]] and
+        return a ResourceSpec instance with the corresponding attributes. If the specification
+        string is not in the correct format, raise a ValueError with a descriptive error message.
         """
-        parts = spec.split(":")
+
+        parts = spec.split("/", 3)
         if len(parts) < 2:
-            logger.error(
-                "Invalid xcom specification format",
-                expected_format="DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]",
-            )
             raise ValueError(
-                "Invalid xcom specification format. Expected DAG_ID:DAG_RUN_ID[:TASK_ID[:KEY]]"
+                "Invalid specification format. Expected DAG_ID/DAG_RUN_ID[/TASK_ID[/KEY]]"
             )
+
         dag_id, run_id = parts[0], parts[1]
         task_id = parts[2] if len(parts) > 2 else None
         key = parts[3] if len(parts) > 3 else None
@@ -315,6 +313,12 @@ class DAGRun:
         self._has_finished = False  # To keep track of whether we need to re-fetch the attributes
         self._dag_run = dag_run
 
+        # If we're instantiated with an object that we know is already in a terminal state, we can
+        # set the _has_finished flag to True right away to avoid unnecessary API calls later on when
+        # checking the state or other attributes of the DAG run.
+        if self._dag_run and self._dag_run.state in TERMINAL_DAGRUN_STATES:
+            self._has_finished = True
+
     def __repr__(self) -> str:
         """Return a string representation of the DAGRun instance, including the DAG ID and run
         ID."""
@@ -443,6 +447,17 @@ class DAG:
         )
         logger.info("DAG run triggered successfully", dag_id=self.id, response=result)
         return DAGRun(self.app, dag=self, run_id=run_id)
+
+    def get_dag_runs(self, limit) -> list[DAGRun]:
+        """Fetch DAG runs for this DAG from the Airflow API, limited to the specified number of
+        results."""
+        dag_runs_data = self.app.client._DAG_run_api.get_dag_runs(
+            dag_id=self.id, limit=limit
+        ).dag_runs
+        return [
+            DAGRun(self.app, dag=self, run_id=dag_run.dag_run_id, dag_run=dag_run)
+            for dag_run in dag_runs_data
+        ]
 
     @property
     def dag(self) -> DAGDetailsResponse:

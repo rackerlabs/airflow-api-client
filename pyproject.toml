@@ -12,7 +12,8 @@ dependencies = [
     "structlog>=25.5.0,<26.0.0",
     "apache-airflow-client>=3.1.6,<4.0.0",
     "requests>=2.32.5,<3.0.0",
-    "tabulate>=0.9.0"
+    "tabulate>=0.9.0",
+    "jmespath>=1.1.0",
 ]
 
 [project.entry-points."airflow_api_client.auth"]

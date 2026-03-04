@@ -2,7 +2,7 @@
 
 from airflow_api_client.commands import Command
 from airflow_api_client.log import logger
-from airflow_api_client.models import XComSpec
+from airflow_api_client.models import ResourceSpec
 from airflow_api_client.typedefs import App
 
 
@@ -16,12 +16,12 @@ class XComCommand(Command):
     def add_arguments(cls, parser) -> None:
         parser.add_argument(
             "xcom_spec",
-            metavar="DAG_ID:RUN_ID[:TASK_ID[:KEY]]",
+            metavar="DAG_ID/RUN_ID[/TASK_ID[/KEY]]",
             help=(
                 "Retrieve the value of the 'return_value' XCom for the specified DAG run."
-                " The format should be DAG_ID:DAG_RUN_ID:TASK_ID. This is useful for retrieving"
+                " The format should be DAG_ID/DAG_RUN_ID/TASK_ID. This is useful for retrieving"
                 " results from a DAG run after it has completed. If the specified DAG run or task"
-                " does not exist. Only DAG_ID:DAG_RUN_ID is required, if TASK_ID and KEY are"
+                " does not exist. Only DAG_ID/DAG_RUN_ID is required, if TASK_ID and KEY are"
                 " omitted, the client will attempt to retrieve all xcom entries for all tasks."
                 " If only KEY is omitted, it will attempt to retrieve all xcom entries for the"
                 " specified task."
@@ -31,7 +31,7 @@ class XComCommand(Command):
     def execute(self, app: App, **kwargs) -> None:
         logger.debug("Executing XComCommand with arguments", xcom_spec=app.args.xcom_spec)
         # xcom.get_xcom(app, app.args.xcom_spec)
-        spec = XComSpec.from_string(app, app.args.xcom_spec)
+        spec = ResourceSpec.from_string(app, app.args.xcom_spec)
 
         logger.debug(f"Getting XCom entry with specification {app.args.xcom_spec}", spec=spec)
 

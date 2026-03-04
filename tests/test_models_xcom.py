@@ -4,7 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from airflow_api_client.models import DAG, DAGRun, TaskInstance, XComEntry, XComEntryList, XComSpec
+from airflow_api_client.models import (
+    DAG,
+    DAGRun,
+    ResourceSpec,
+    TaskInstance,
+    XComEntry,
+    XComEntryList,
+)
 
 # pylint: disable=protected-access,duplicate-code
 
@@ -13,7 +20,7 @@ from airflow_api_client.models import DAG, DAGRun, TaskInstance, XComEntry, XCom
 
 def test_xcom_spec_from_string_full(mock_app):
     """Test parsing full XCom spec with all components"""
-    spec = XComSpec.from_string(mock_app, "my_dag:run_123:my_task:my_key")
+    spec = ResourceSpec.from_string(mock_app, "my_dag/run_123/my_task/my_key")
 
     assert spec.dag.id == "my_dag"
     assert spec.dag_run.id == "run_123"
@@ -23,7 +30,7 @@ def test_xcom_spec_from_string_full(mock_app):
 
 def test_xcom_spec_from_string_no_key(mock_app):
     """Test parsing XCom spec without key"""
-    spec = XComSpec.from_string(mock_app, "my_dag:run_123:my_task")
+    spec = ResourceSpec.from_string(mock_app, "my_dag/run_123/my_task")
 
     assert spec.dag.id == "my_dag"
     assert spec.dag_run.id == "run_123"
@@ -33,7 +40,7 @@ def test_xcom_spec_from_string_no_key(mock_app):
 
 def test_xcom_spec_from_string_no_task(mock_app):
     """Test parsing XCom spec without task"""
-    spec = XComSpec.from_string(mock_app, "my_dag:run_123")
+    spec = ResourceSpec.from_string(mock_app, "my_dag/run_123")
 
     assert spec.dag.id == "my_dag"
     assert spec.dag_run.id == "run_123"
@@ -43,13 +50,13 @@ def test_xcom_spec_from_string_no_task(mock_app):
 
 def test_xcom_spec_from_string_invalid(mock_app):
     """Test that invalid spec raises ValueError"""
-    with pytest.raises(ValueError, match="Invalid xcom specification format"):
-        XComSpec.from_string(mock_app, "only_dag_id")
+    with pytest.raises(ValueError, match="Invalid specification format"):
+        ResourceSpec.from_string(mock_app, "only_dag_id")
 
 
 def test_xcom_spec_repr(mock_app):
     """Test XComSpec string representation"""
-    spec = XComSpec.from_string(mock_app, "my_dag:run_123:my_task:my_key")
+    spec = ResourceSpec.from_string(mock_app, "my_dag/run_123/my_task/my_key")
     repr_str = repr(spec)
 
     assert "my_dag" in repr_str

@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 import requests
 
+from airflow_api_client.log import logger
+
 if TYPE_CHECKING:
     # The type hint for `args` argument
     from configparser import RawConfigParser
@@ -105,6 +107,7 @@ class AirflowAPIClientAuthProvider:
             },
             timeout=self.timeout,
         )
+        logger.debug(f"Token response: {response.status_code} - {response.text}")
         self._token = AirflowClientJWTToken(response.json()["access_token"])
         return self._token
 

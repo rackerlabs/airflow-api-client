@@ -27,7 +27,7 @@ def output(data, args, headers=None):
             tabulate(
                 data,
                 headers=headers,
-                tablefmt=os.getenv("AIRFLOW_API_CLIENT_TABLE_FORMAT", "simple"),
+                tablefmt=os.getenv("AIRFLOW_API_CLIENT_TABLE_FORMAT", "grid"),
             )
         )
     else:  # human output, raw/unformatted data

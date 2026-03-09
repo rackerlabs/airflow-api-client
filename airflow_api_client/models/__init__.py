@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Union
 
 from airflow_client.client.models import (
     DAGDetailsResponse,
+    DAGPatchBody,
+    DAGResponse,
     DAGRunResponse,
     DagRunState,
     ResponseGetXcomEntry,
@@ -468,6 +470,26 @@ class DAG:
             return self._dag
         self._dag = self.app.client._DAG_api.get_dag_details(dag_id=self.id)
         return self._dag
+
+    def pause(self) -> DAGResponse:
+        """Pause this DAG by sending a request to the Airflow API to update the DAG's `is_paused`
+        attribute to `True`. This will prevent the DAG from being scheduled to run until it is
+        resumed.
+        """
+
+        logger.debug(f"Pausing DAG '{self.id}' via Airflow API")
+        return self.app.client._DAG_api.patch_dag(
+            dag_id=self.id, dag_patch_body=DAGPatchBody(is_paused=True)
+        )
+
+    def unpause(self) -> DAGResponse:
+        """Unpause this DAG by sending a request to the Airflow API to update the DAG's `is_paused`
+        attribute to `False`.
+        """
+        logger.debug(f"Unpausing DAG '{self.id}' via Airflow API")
+        return self.app.client._DAG_api.patch_dag(
+            dag_id=self.id, dag_patch_body=DAGPatchBody(is_paused=False)
+        )
 
     def create_payload(self) -> Dict[str, Any]:
         """Create a payload for triggering a DAG run by prompting the user for values for each

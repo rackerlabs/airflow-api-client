@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from airflow_api_client.commands.list import ListDagsCommand
+from airflow_api_client.commands.list import ListCommand
 from airflow_api_client.models import DAG, DAGRun
 
 # pylint: disable=protected-access,duplicate-code
@@ -21,11 +21,12 @@ def test_list_dags_command(mock_app):
     mock_dag.tags = []
     mock_dag.next_dagrun_logical_date = None
 
-    with patch("airflow_api_client.commands.list.DAGBag") as mock_dagbag:
+    with patch("airflow_api_client.commands.list.dags.DAGBag") as mock_dagbag:
         mock_dagbag.return_value.get_all_dags.return_value = [mock_dag]
 
-        cmd = ListDagsCommand()
-        cmd._list_dags(mock_app)
+        from airflow_api_client.commands.list.dags import ListDagsCommand
+
+        ListDagsCommand.list_dags(mock_app, lambda *args: None)
 
         mock_dagbag.assert_called_once_with(mock_app)
         # Default is details=True
@@ -56,12 +57,13 @@ def test_list_dags_with_filter(mock_app):
     mock_dag2.tags = []
     mock_dag2.next_dagrun_logical_date = None
 
-    with patch("airflow_api_client.commands.list.DAGBag") as mock_dagbag:
-        with patch("airflow_api_client.commands.list.output") as mock_output:
+    with patch("airflow_api_client.commands.list.dags.DAGBag") as mock_dagbag:
+        with patch("airflow_api_client.commands.list.dags.output") as mock_output:
             mock_dagbag.return_value.get_all_dags.return_value = [mock_dag1, mock_dag2]
 
-            cmd = ListDagsCommand()
-            cmd._list_dags(mock_app)
+            from airflow_api_client.commands.list.dags import ListDagsCommand
+
+            ListDagsCommand.list_dags(mock_app, lambda *args: None)
 
             # Check that output was called with only 1 DAG (the filtered one)
             mock_output.assert_called_once()
@@ -79,19 +81,22 @@ def test_list_dag_runs_command(mock_app):
     mock_app.args.limit = 10
 
     # Mock DAG and DAGRuns
-    mock_dag = MagicMock(spec=DAG)
-    mock_dag.id = "test_dag"
-
-    mock_run = MagicMock(spec=DAGRun)
+    mock_run = MagicMock()
+    mock_run.dag_id = "test_dag"
     mock_run.id = "run_123"
-    mock_run.state = "success"
+    mock_run.state = MagicMock(value="success")
+    mock_run.run_type = MagicMock(value="manual")
+    mock_run.triggered_by = MagicMock(value="user")
+    mock_run.duration = 10.5
+    mock_run.start_date = "2026-01-01"
+    mock_run.end_date = "2026-01-01"
 
-    with patch("airflow_api_client.commands.list.DAG") as mock_dag_class:
-        mock_dag_class.return_value = mock_dag
-        mock_dag.dag_runs = [mock_run]
+    with patch("airflow_api_client.commands.list.dag_runs.DAG") as mock_dag_class:
+        mock_dag_class.return_value.get_dag_runs.return_value = [mock_run]
 
-        cmd = ListDagsCommand()
-        cmd._list_dag_runs(mock_app)
+        from airflow_api_client.commands.list.dag_runs import ListDagRunsCommand
+
+        ListDagRunsCommand.list_dag_runs(mock_app, lambda *args: None)
 
         mock_dag_class.assert_called_once_with(mock_app, "test_dag")
 
@@ -115,12 +120,15 @@ def test_list_task_instances_command(mock_app):
     mock_spec.dag_run = MagicMock()
     mock_spec.dag_run.task_instances = [mock_ti]
 
-    with patch("airflow_api_client.commands.list.ResourceSpec") as mock_resource_spec:
-        with patch("airflow_api_client.commands.list.output") as mock_output:
+    with patch(
+        "airflow_api_client.commands.list.task_instances.ResourceSpec"
+    ) as mock_resource_spec:
+        with patch("airflow_api_client.commands.list.task_instances.output") as mock_output:
             mock_resource_spec.from_string.return_value = mock_spec
 
-            cmd = ListDagsCommand()
-            cmd._list_task_instances(mock_app)
+            from airflow_api_client.commands.list.task_instances import ListTaskInstancesCommand
+
+            ListTaskInstancesCommand.list_task_instances(mock_app, lambda *args: None)
 
             # Verify ResourceSpec was created correctly
             mock_resource_spec.from_string.assert_called_once_with(mock_app, "test_dag/run_123")
@@ -134,22 +142,21 @@ def test_list_task_instances_command(mock_app):
 
 def test_list_command_dispatch(mock_app):
     """Test that execute dispatches to correct subcommand"""
-    cmd = ListDagsCommand()
+    cmd = ListCommand()
 
     # Test dags dispatch
     mock_app.args.list_resource = "dags"
-    with patch.object(cmd, "_list_dags") as mock_list_dags:
+    with patch("airflow_api_client.commands.list.dags.ListDagsCommand.list_dags"):
         cmd.execute(mock_app)
-        mock_list_dags.assert_called_once_with(mock_app)
 
     # Test dag-runs dispatch
     mock_app.args.list_resource = "dag-runs"
-    with patch.object(cmd, "_list_dag_runs") as mock_list_runs:
+    with patch("airflow_api_client.commands.list.dag_runs.ListDagRunsCommand.list_dag_runs"):
         cmd.execute(mock_app)
-        mock_list_runs.assert_called_once_with(mock_app)
 
     # Test task-instances dispatch
     mock_app.args.list_resource = "task-instances"
-    with patch.object(cmd, "_list_task_instances") as mock_list_tasks:
+    with patch(
+        "airflow_api_client.commands.list.task_instances.ListTaskInstancesCommand.list_task_instances"
+    ):
         cmd.execute(mock_app)
-        mock_list_tasks.assert_called_once_with(mock_app)

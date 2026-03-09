@@ -47,11 +47,20 @@ def builtin_commands() -> Dict[str, Type[Command]]:
     commands = {}
     commands_dir = Path(__file__).parent / "commands"
 
-    for file in commands_dir.glob("*.py"):
-        if file.stem in ("__init__", "base"):
+    # Check both .py files and directories (packages)
+    for item in commands_dir.iterdir():
+        if item.name.startswith("_") or item.name == "base.py":
             continue
 
-        module = importlib.import_module(f"airflow_api_client.commands.{file.stem}")
+        # Handle both files and directories
+        if item.is_file() and item.suffix == ".py":
+            module_name = item.stem
+        elif item.is_dir() and (item / "__init__.py").exists():
+            module_name = item.name
+        else:
+            continue
+
+        module = importlib.import_module(f"airflow_api_client.commands.{module_name}")
 
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Command) and obj is not Command:

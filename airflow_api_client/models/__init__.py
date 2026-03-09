@@ -2,8 +2,6 @@
 Airflow entities via the Airflow API.
 """
 
-import json
-import sys
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Union
 
@@ -16,8 +14,8 @@ from airflow_client.client.models import (
     TriggerDAGRunPostBody,
 )
 
+from airflow_api_client.io import PayloadConstructor, output
 from airflow_api_client.log import logger
-from airflow_api_client.output import output
 
 if TYPE_CHECKING:
     from airflow_api_client import App
@@ -475,36 +473,8 @@ class DAG:
         """Create a payload for triggering a DAG run by prompting the user for values for each
         parameter defined in the DAG's parameters.
         """
-        payload = {"conf": {}}
-
-        for key, value in self.params.items():
-            value_types = value["schema"]["type"]
-            prompt = f"Enter value for parameter: '{key}'\n"
-            prompt += f'Description: {value["description"]}'
-            prompt += f'\nType(s): {", ".join(value_types)}'
-            prompt += "\n> "
-            sys.stdout.write(prompt)
-            value = input()
-            for value_type in value_types:
-                if value_type == "null" and value == "":
-                    value = None
-                    break
-                if value_type == "integer":
-                    value = int(value)
-                elif value_type == "number":
-                    value = float(value)
-                elif value_type == "boolean":
-                    if value not in ("true", "false", "1", "0", "yes", "no"):
-                        raise ValueError(
-                            f"Invalid boolean value for parameter '{key}': '{value}'. Expected one"
-                            " of 'true', 'false', '1', '0', 'yes', or 'no'."
-                        )
-
-                    value = value.lower() in ("true", "1", "yes")
-            try:
-                payload["conf"][key] = json.loads(value)
-            except (json.JSONDecodeError, TypeError):
-                payload["conf"][key] = value
+        constructor = PayloadConstructor(self.params)
+        payload = {"conf": constructor.construct_payload()}
 
         return payload
 

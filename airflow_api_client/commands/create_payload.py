@@ -5,9 +5,9 @@ in the DAG's parameters.
 import json
 
 from airflow_api_client.commands import Command
+from airflow_api_client.io import output
 from airflow_api_client.log import logger
 from airflow_api_client.models import DAG
-from airflow_api_client.output import output
 from airflow_api_client.typedefs import App
 
 

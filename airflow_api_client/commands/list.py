@@ -4,9 +4,9 @@ from typing import Any, List
 
 from airflow_api_client.commands import Command
 from airflow_api_client.filters import filter_obj, get_obj_value
+from airflow_api_client.io import output
 from airflow_api_client.log import logger
 from airflow_api_client.models import DAG, DAGBag, ResourceSpec
-from airflow_api_client.output import output
 from airflow_api_client.typedefs import App
 
 

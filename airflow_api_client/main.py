@@ -19,8 +19,8 @@ import requests
 
 from airflow_api_client.auth import AirflowAPIClientAuthProvider
 from airflow_api_client.commands import Command
+from airflow_api_client.io import yaml
 from airflow_api_client.log import logger, set_log_level
-from airflow_api_client.output import yaml
 from airflow_api_client.typedefs import App
 
 try:

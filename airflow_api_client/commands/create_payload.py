@@ -49,7 +49,7 @@ class CreatePayload(Command):
         logger.debug("Executing CreatePayload with arguments", dag_id=app.args.dag_id)
         dag = DAG(app, app.args.dag_id)
         parameters = dag.params or {}
-        payload = {"conf": {}}
+        payload = {}
         logger.debug(
             "Constructing payload for DAG run", dag_id=app.args.dag_id, parameters=parameters
         )

@@ -194,17 +194,18 @@ class XComEntryList:
         if self.app.args.output_format in ("json", "yaml"):
             output(self.as_dict(), self.app.args)
         else:
+            data = []
             headers = ["Task ID", "Key", "Timestamp", "Value"]
             for xcom in self:
-                data = [
+                data.append(
                     [
                         xcom.task_instance.id,
                         xcom.key,
                         xcom.timestamp,
                         xcom.value,
                     ]
-                ]
-                output(data, self.app.args, headers=headers)
+                )
+            output(data, self.app.args, headers=headers)
 
 
 class TaskInstance:
@@ -452,7 +453,7 @@ class DAG:
         """Fetch DAG runs for this DAG from the Airflow API, limited to the specified number of
         results."""
         dag_runs_data = self.app.client._DAG_run_api.get_dag_runs(
-            dag_id=self.id, limit=limit
+            dag_id=self.id, limit=limit, order_by=["-start_date"]
         ).dag_runs
         return [
             DAGRun(self.app, dag=self, run_id=dag_run.dag_run_id, dag_run=dag_run)

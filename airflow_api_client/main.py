@@ -97,6 +97,12 @@ class Client(airflow_client.client.ApiClient):
         auth.set_client_configuration(client_configuration)
         super().__init__(client_configuration)
 
+    def call_api(self, *args, _request_timeout=None, **kwargs):
+        """Override to inject default timeout from CLI args."""
+        if _request_timeout is None:
+            _request_timeout = self.args.timeout
+        return super().call_api(*args, _request_timeout=_request_timeout, **kwargs)
+
     def _make_raw_request(self, method, path, **kwargs) -> Union[Dict[str, Any], List[Any]]:
         headers = {
             "accept": "application/json",
@@ -248,6 +254,17 @@ def parse_args(commands, providers):
             config.get(bootstrap_args.profile, "endpoint", fallback=None),
         ),
         help="Override the Airflow API endpoint (useful for testing against non-prod environments)",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        "-T",
+        type=int,
+        default=os.getenv(
+            "AIRFLOW_API_CLIENT_TIMEOUT",
+            config.getint(bootstrap_args.profile, "timeout", fallback=60),
+        ),
+        help="Timeout for API requests in seconds (default: 60)",
     )
 
     output_choices = ["human", "json"]

@@ -5,6 +5,7 @@ import json
 from airflow_api_client.commands import Command
 from airflow_api_client.commands.get.dag import GetDagCommand
 from airflow_api_client.commands.get.dag_run import GetDagRunCommand
+from airflow_api_client.commands.get.log import GetLogCommand
 from airflow_api_client.commands.get.task_instance import GetTaskInstanceCommand
 from airflow_api_client.io import output
 from airflow_api_client.log import logger
@@ -30,6 +31,7 @@ class GetCommand(Command):
         GetDagCommand.add_subparser(subparsers)
         GetDagRunCommand.add_subparser(subparsers)
         GetTaskInstanceCommand.add_subparser(subparsers)
+        GetLogCommand.add_subparser(subparsers)
 
     def execute(self, app: App, **kwargs) -> None:
         """Get details about a specific resource"""
@@ -45,6 +47,8 @@ class GetCommand(Command):
         elif app.args.resource_type == "task-instance":
 
             result = GetTaskInstanceCommand.get_task_instance(app)
+        elif app.args.resource_type == "log":
+            result = GetLogCommand.get_log(app)
 
         if result:
             # For human output, format as key-value table

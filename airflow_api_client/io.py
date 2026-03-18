@@ -15,7 +15,7 @@ except ImportError:
     yaml = None
 
 
-def output(data, args, headers=None):
+def output(data, args, headers=None, maxcolwidths=None, tablefmt=None):
     """Outputs data in the specified format (JSON, YAML, or human-readable table)."""
     if args.output_format == "json":
         print(json.dumps(data, indent=4, sort_keys=True, default=str))
@@ -23,11 +23,13 @@ def output(data, args, headers=None):
 
         print(yaml.dump(data, sort_keys=False))
     elif headers:  # human output, with tabular data
+        print(maxcolwidths)
         print(
             tabulate(
                 data,
                 headers=headers,
-                tablefmt=os.getenv("AIRFLOW_API_CLIENT_TABLE_FORMAT", "grid"),
+                tablefmt=tablefmt or os.getenv("AIRFLOW_API_CLIENT_TABLE_FORMAT", "grid"),
+                maxcolwidths=maxcolwidths,
             )
         )
     else:  # human output, raw/unformatted data

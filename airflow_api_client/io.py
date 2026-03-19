@@ -18,7 +18,7 @@ except ImportError:
 def output(data, args, headers=None, maxcolwidths=None, tablefmt=None):
     """Outputs data in the specified format (JSON, YAML, or human-readable table)."""
     if args.output_format == "json":
-        print(json.dumps(data, indent=4, sort_keys=True, default=str))
+        print(json.dumps(data, indent=4, sort_keys=False, default=str))
     elif args.output_format == "yaml":
 
         print(yaml.dump(data, sort_keys=False))

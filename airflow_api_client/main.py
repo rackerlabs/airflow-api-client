@@ -12,7 +12,7 @@ import sys
 from functools import cached_property
 from importlib.metadata import PackageNotFoundError, entry_points, version
 from pathlib import Path
-from typing import Any, Dict, List, Type, Union
+from typing import Dict, Type
 
 import airflow_client.client
 import requests
@@ -102,17 +102,6 @@ class Client(airflow_client.client.ApiClient):
         if _request_timeout is None:
             _request_timeout = self.args.timeout
         return super().call_api(*args, _request_timeout=_request_timeout, **kwargs)
-
-    def _make_raw_request(self, method, path, **kwargs) -> Union[Dict[str, Any], List[Any]]:
-        headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.auth.client_token}",
-        }
-        result = requests.request(
-            method, f"{self.args.endpoint}/api/v2{path}", headers=headers, timeout=60, **kwargs
-        )
-        return result.json()
 
     # pylint: disable=invalid-name
     @cached_property

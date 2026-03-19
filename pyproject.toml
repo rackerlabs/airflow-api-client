@@ -25,7 +25,7 @@ airflow-api-client = "airflow_api_client.main:cli"
 [project.optional-dependencies]
 dev = [
     "pylint>=3.3.5",
-    "black>=25.1.0",
+    "black>=26.3.1",
     "isort>=5.13.2",
     "flake8>=7.3.0",
     "pytest>=8.0.0",
@@ -47,6 +47,7 @@ disable = ["duplicate-code"]
 
 [tool.black]
 line-length = 100
+target-version = ["py310"]
 
 [tool.flake8]
 line-length = 100

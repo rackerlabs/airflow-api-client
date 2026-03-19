@@ -3,9 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 from airflow_api_client.commands.list import ListCommand
-from airflow_api_client.models import DAG, DAGRun
+from airflow_api_client.models import DAG
 
-# pylint: disable=protected-access,duplicate-code
+# pylint: disable=protected-access,duplicate-code,import-outside-toplevel
 
 
 def test_list_dags_command(mock_app):
@@ -157,6 +157,7 @@ def test_list_command_dispatch(mock_app):
     # Test task-instances dispatch
     mock_app.args.list_resource = "task-instances"
     with patch(
-        "airflow_api_client.commands.list.task_instances.ListTaskInstancesCommand.list_task_instances"
+        "airflow_api_client.commands.list.task_instances.ListTaskInstancesCommand."
+        "list_task_instances"
     ):
         cmd.execute(mock_app)

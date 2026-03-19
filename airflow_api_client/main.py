@@ -93,7 +93,7 @@ class Client(airflow_client.client.ApiClient):
         self.args = args
         self.auth = auth
         client_configuration = airflow_client.client.Configuration(host=args.endpoint)
-        client_configuration.debug = args.verbose >= 3
+        client_configuration.debug = args.verbose >= 2
         auth.set_client_configuration(client_configuration)
         super().__init__(client_configuration)
 

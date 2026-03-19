@@ -51,7 +51,7 @@ logger = get_logger()
 
 def set_log_level(verbose: int) -> None:
     """Set the log level based on the verbosity level provided in the arguments."""
-    levels = [logging.WARNING, logging.INFO, logging.DEBUG]
+    levels = [logging.INFO, logging.DEBUG]
     level = levels[min(verbose, len(levels) - 1)]
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(level))
     if level != logging.DEBUG:

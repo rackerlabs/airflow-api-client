@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sys
 from typing import Any, Dict
 
@@ -22,8 +23,18 @@ def output(data, args, headers=None, maxcolwidths=None, tablefmt=None):
     elif args.output_format == "yaml":
 
         print(yaml.dump(data, sort_keys=False))
-    elif headers:  # human output, with tabular data
-        print(maxcolwidths)
+    elif headers is not None:  # human output, with tabular data
+        try:
+            padding = len(data[0][0]) + 24  # Timestamp length + padding
+        except IndexError:
+            padding = 24
+        maxcolwidths = maxcolwidths or shutil.get_terminal_size((80, 20)).columns - padding
+
+        # missingval is applied AFTER maxcolwidths is calculated in tabulate, and it raises
+        # a TypeError if it encounters None values, so we need to replace them with empty strings
+        # here before passing the data to tabulate
+        data = [[c if c is not None else "" for c in row] for row in data]
+
         print(
             tabulate(
                 data,

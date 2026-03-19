@@ -13,6 +13,7 @@ from airflow_client.client.models import (
     DagRunState,
     ResponseGetXcomEntry,
     TaskInstanceResponse,
+    TaskInstancesLogResponse,
     TriggerDAGRunPostBody,
 )
 
@@ -173,7 +174,7 @@ class XComEntryList:
         """Return an iterator over the list of XCom entries"""
         return iter(self.xcoms)
 
-    def as_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Return the list of XCom entries as a dictionary, grouped by task ID and key"""
         _output = {"dag_id": self.dag.id, "dag_run_id": self.dag_run.id, "tasks": {}}
         for xcom in self.xcoms:
@@ -192,7 +193,7 @@ class XComEntryList:
         """
 
         if self.app.args.output_format in ("json", "yaml"):
-            output(self.as_dict(), self.app.args)
+            output(self.to_dict(), self.app.args)
         else:
             data = []
             headers = ["Task ID", "Key", "Timestamp", "Value"]
@@ -206,6 +207,88 @@ class XComEntryList:
                     ]
                 )
             output(data, self.app.args, headers=headers)
+
+
+class Log:
+    """A class representing the log for a task instance in Airflow, providing a method to fetch the
+    log content from the Airflow API.
+    """
+
+    def __init__(
+        self,
+        app: "App",
+        dag: "DAG",
+        dag_run: "DAGRun",
+        task_instance: "TaskInstance",
+        log_data: "TaskInstancesLogResponse" = None,
+        try_number: int = 1,
+    ) -> None:
+        self.app = app
+        self.dag = dag
+        self.dag_run = dag_run
+        self.task_instance = task_instance
+        self._log_data = log_data
+        self.try_number = try_number
+
+    def __getattr__(self, item) -> Any:
+        """Delegate attribute access to the underlying logresponse object"""
+        return getattr(self.log_data, item)
+
+    @property
+    def log_data(self) -> str:
+        """Fetch the log content for this task instance from the Airflow API and return it as a
+        string."""
+
+        if self._log_data is not None:
+            return self._log_data
+        logger.debug(
+            f"Fetching log for task instance '{self.task_instance.id}' in DAG run"
+            f" '{self.dag_run.id}' of DAG '{self.dag.id}' from Airflow API"
+        )
+        self._log_data = self.app.client._task_instance_api.get_log(
+            dag_id=self.dag.id,
+            dag_run_id=self.dag_run.id,
+            task_id=self.task_instance.id,
+            try_number=self.try_number,
+        )
+
+        return self._log_data
+
+    def __iter__(self) -> Iterator[Dict]:
+        """Return an iterator over the list of log entries, returning a dictionary with the
+        timestamp and log event for each log entry."""
+        for log_line in self.log_data.to_dict()["content"]:
+            if (
+                log_line.timestamp is None
+                and log_line.event.startswith("::")
+                and "group::" in log_line.event
+            ):
+                # These are special log lines that indicate the start or end of a log stream, and
+                # they don't have a timestamp. We can skip these lines since they don't serve
+                # any purpose in a CLI
+                continue
+            yield {"timestamp": log_line.timestamp, "event": log_line.event}
+
+    def output(self, time_format: str = "%Y-%m-%dT%H:%M:%S", table_format: str = "plain") -> None:
+        """Output the log content in a human-readable format, with timestamps formatted according to
+        the specified time format.
+        table_format defaults to `plain` as the log contents is quite verbose and arbitrary. Too
+        many borders look messy and is hard to read or copy-and-paste from.
+        """
+
+        rendered = []
+        for log_event in self:
+            event_time = (
+                log_event["timestamp"].strftime(time_format) if log_event["timestamp"] else ""
+            )
+            rendered.append([event_time, log_event["event"]])
+
+        output(
+            rendered,
+            self.app.args,
+            headers=["Timestamp", "Log Event"],
+            tablefmt=table_format,
+        )
 
 
 class TaskInstance:
@@ -291,6 +374,17 @@ class TaskInstance:
             )
 
         return xcoms
+
+    def get_log(self, try_number: Union[None, int] = None) -> str:
+        """Fetch the log for this task instance from the Airflow API and return it as a string."""
+        try_number = try_number or self.try_number
+        return Log(
+            app=self.app,
+            dag=self.dag,
+            dag_run=self.dag_run,
+            task_instance=self,
+            try_number=try_number,
+        )
 
     def __repr__(self) -> str:
         return f"TaskInstance(dag='{self.dag}', task_id='{self.id}'," f" dag_run='{self.dag_run}')"
@@ -380,9 +474,12 @@ class DAGRun:
             f"Fetching task instances for DAG run '{self.id}'"
             f" of DAG '{self.dag.id}' from Airflow API"
         )
-        task_instances_data = self.app.client._task_instance_api.get_task_instances(
-            dag_id=self.dag.id, dag_run_id=self.id
-        ).task_instances
+        task_instances_data = sorted(
+            self.app.client._task_instance_api.get_task_instances(
+                dag_id=self.dag.id, dag_run_id=self.id
+            ).task_instances,
+            key=lambda ti: ti.end_date or ti.start_date or ti.execution_date,
+        )
 
         return [
             TaskInstance(
@@ -408,6 +505,14 @@ class DAGRun:
             for xcom in ti.get_xcom_entries():
                 xcoms.add(xcom)
         return xcoms
+
+    def get_logs(self, try_number: int = 1) -> Dict[str, Log]:
+        """Return a dictionary of logs for each task instance in this DAG run, where the keys are
+        task IDs and the values are Log objects representing the logs for each task instance. The
+        logs are fetched lazily from the Airflow API when accessed, so they won't be fetched until
+        you try to access the log for a specific task instance.
+        """
+        return {ti.id: list(ti.get_log(try_number=try_number)) for ti in self.task_instances}
 
 
 class DAG:
@@ -497,9 +602,7 @@ class DAG:
         parameter defined in the DAG's parameters.
         """
         constructor = PayloadConstructor(self.params)
-        payload = {"conf": constructor.construct_payload()}
-
-        return payload
+        return {"conf": constructor.construct_payload()}
 
     def __getattr__(self, item) -> Any:
         """Delegate attribute access to the underlying DAG details object. If the DAG details

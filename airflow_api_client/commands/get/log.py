@@ -1,8 +1,5 @@
 """Get task instance log"""
 
-import os
-import shutil
-
 from airflow_client.client.exceptions import NotFoundException
 
 from airflow_api_client.io import output
@@ -37,84 +34,62 @@ class GetLogCommand:
             help=(
                 "Time format for log timestamps (only applicable"
                 " for human output, default: '%%Y-%%m-%%dT%%H:%%M:%%S')."
-                " Supports strftime format codes."
+                " Supports strftime format codes. Only applies to human output, ignored for"
+                " JSON/YAML output."
             ),
         )
 
     @staticmethod
     def get_log(app: App) -> dict:
-        """Get task instance details and return as dict"""
+        """Get task instance logs and return as dict"""
         spec = ResourceSpec.from_string(app, app.args.spec)
 
-        task_instances = [spec.task_instance.id] if spec.task_instance else []
+        task_instances = [spec.task_instance] if spec.task_instance else []
         if not task_instances:
-            task_instances = [ti.id for ti in spec.dag_run.task_instances]
+            task_instances = spec.dag_run.task_instances
 
         logger.debug(
             f"Getting logs for task instances: {task_instances} in "
             f" DAG: {spec.dag.id} and DAG Run: {spec.dag_run.id}"
         )
 
+        if app.args.output_format == "human":
+            identifier = f"{spec.dag.id}/{spec.dag_run.id}"
+            for task_instance in task_instances:
+                if task_instance.try_number < app.args.try_number:
+                    logger.warning(
+                        f"Task instance {task_instance.id} has try number "
+                        f"{task_instance.try_number} which is less than the requested "
+                        f"try number {app.args.try_number}. Returning latest available log instead."
+                    )
+                output(
+                    [[f"Log for Task Instance: {identifier}/{task_instance.id}"]],
+                    app.args,
+                    headers=[],
+                )
+                try:
+                    task_instance.get_log(app.args.try_number).output(
+                        time_format=app.args.time_format
+                    )
+                except NotFoundException:
+                    logger.error(
+                        f"Failed to get log for task instance: {task_instance.id} (not found)"
+                        " Upstream failed or skipped?"
+                    )
+                    continue
+            return None
+
+        # json or yaml output
         logs = {}
         for task_instance in task_instances:
-            logger.debug(
-                f"Getting log for task instance: {task_instance} (try number:"
-                f" {app.args.try_number})"
-            )
-            # pylint: disable=protected-access
             try:
-                logs[task_instance] = {
-                    "log": app.client._task_instance_api.get_log(
-                        spec.dag.id,
-                        spec.dag_run.id,
-                        task_instance,
-                        try_number=app.args.try_number,
-                    ).content,
-                }
+                log = task_instance.get_log(try_number=app.args.try_number)
+                logs[task_instance.id] = list(log)
             except NotFoundException:
-                logger.debug(
-                    f"Failed to get log for task instance: {task_instance} not found."
+                logger.error(
+                    f"Failed to get log for task instance: {task_instance.id} (not found)"
                     " Upstream failed or skipped"
                 )
                 continue
 
-        # This is an outlier, we only let the main command code handle the output for json and
-        # yaml formats. For human output, we handle the rendering here to provide a more
-        # user-friendly display of the logs. Logs can be quite verbose and not lend itself
-        # well to grid-display
-        if app.args.output_format in ["json", "yaml"]:
-            return logs
-
-        # Human output, we iterate over the logs and returns their to_str() representation, which is
-        # the raw log content. We also print the actual_instance and its type for debugging
-        # purposes.
-
-        for task_instance, log_info in logs.items():
-            rendered = []
-            for log_events in [li.to_dict() for li in log_info.values()]:
-                for log_event in log_events:
-                    event_time = (
-                        log_event.timestamp.strftime(app.args.time_format)
-                        if log_event.timestamp
-                        else ""
-                    )
-                    rendered.append([event_time, log_event.event])
-            logger.info(f"Log entries for task instance: {task_instance}")
-
-            # We respect the environment variable, but if left up to us, we default to
-            # "simple" for better readability as log lines tend to be a bit long
-            tablefmt = os.getenv("AIRFLOW_API_CLIENT_TABLE_FORMAT", "simple")
-
-            # Get the length of the timestamp to adjust the max column width for the log event
-            # column. We subtract 30 to account for the timestamp and padding.
-            padding = len(rendered[0][0]) + 24  # Timestamp length + padding
-            maxcolwidth = shutil.get_terminal_size((80, 20)).columns - padding
-            output(
-                rendered,
-                app.args,
-                headers=["Timestamp", "Log Event"],
-                tablefmt=tablefmt,
-                maxcolwidths=[None, max(20, maxcolwidth)],
-            )
-
-        return None
+        return logs

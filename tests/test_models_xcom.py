@@ -184,7 +184,7 @@ def test_xcom_entry_list_iteration(mock_app, mock_xcom_entry):
     assert entries[1] == entry2
 
 
-def test_xcom_entry_list_as_dict(mock_app, mock_xcom_entry):
+def test_xcom_entry_list_to_dict(mock_app, mock_xcom_entry):
     """Test converting XComEntryList to dictionary"""
     dag = DAG(mock_app, "test_dag")
     dag_run = DAGRun(mock_app, dag, "run_123")
@@ -194,7 +194,7 @@ def test_xcom_entry_list_as_dict(mock_app, mock_xcom_entry):
     entry = XComEntry(mock_app, dag, dag_run, task, "my_key", xcom_data=mock_xcom_entry)
     xcom_list.add(entry)
 
-    result = xcom_list.as_dict()
+    result = xcom_list.to_dict()
 
     assert result["dag_id"] == "test_dag"
     assert result["dag_run_id"] == "run_123"
@@ -283,7 +283,7 @@ def test_xcom_entry_list_empty(mock_app):
 
     assert len(xcom_list.xcoms) == 0
     assert not list(xcom_list)
-    assert xcom_list.as_dict() == {"dag_id": "test_dag", "dag_run_id": "run_123", "tasks": {}}
+    assert xcom_list.to_dict() == {"dag_id": "test_dag", "dag_run_id": "run_123", "tasks": {}}
 
 
 def test_xcom_entry_list_multiple_tasks(mock_app, mock_xcom_entry):
@@ -300,7 +300,7 @@ def test_xcom_entry_list_multiple_tasks(mock_app, mock_xcom_entry):
     xcom_list.add(entry1)
     xcom_list.add(entry2)
 
-    result = xcom_list.as_dict()
+    result = xcom_list.to_dict()
     assert len(result["tasks"]) == 2
     assert "task1" in result["tasks"]
     assert "task2" in result["tasks"]
@@ -319,7 +319,7 @@ def test_xcom_entry_list_multiple_keys_same_task(mock_app, mock_xcom_entry):
     xcom_list.add(entry1)
     xcom_list.add(entry2)
 
-    result = xcom_list.as_dict()
+    result = xcom_list.to_dict()
     assert len(result["tasks"]) == 1
     assert len(result["tasks"]["test_task"]) == 2
     assert "key1" in result["tasks"]["test_task"]

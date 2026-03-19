@@ -323,7 +323,7 @@ def cli():
         args = parse_args(commands, providers)
         main(commands, args)
     except Exception as ex:  # pylint: disable=broad-except
-        if args and args.verbose >= 2:
+        if args and args.verbose >= 1:
             logger.exception("An error occurred", error=str(ex))
             sys.exit(1)
 

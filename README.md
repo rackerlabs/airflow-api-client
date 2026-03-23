@@ -39,33 +39,50 @@ username = prod_user
 Use profiles with `-P`:
 
 ```bash
-airflow-api-client -P production list
+airflow-api-client -P production list dags
 ```
 
 You may also specify a custom config file location with `-C` or `--config-file`:
 
 ```bash
+airflow-api-client -C /path/to/config.ini list dags
+```
 
 ## Quick Start
 
 If no configuration file is used, the default required inputs are:
---endpoint, --username, and --password. (You can also set these via environment variables as
+`--endpoint`, `--username`, and `--password`. (You can also set these via environment variables as
 described below.)
 
 ```bash
 # List all DAGs
-airflow-api-client list
+airflow-api-client list dags
+
+# List DAG runs for a specific DAG
+airflow-api-client list dag-runs my_dag
+
+# Get details about a specific DAG
+airflow-api-client get dag my_dag
+
+# Get logs for a DAG run
+airflow-api-client get log my_dag/run_id
 
 # Run a DAG
 airflow-api-client run my_dag --conf '{"key": "value"}'
 
+# Pause / unpause a DAG
+airflow-api-client pause my_dag
+airflow-api-client unpause my_dag
+
 # Get XCom results
-airflow-api-client xcom my_dag:run_id:task_id:return_value
+airflow-api-client xcom my_dag/run_id/task_id/return_value
 
 # Create a payload template
 airflow-api-client create-payload my_dag
-```
 
+# Make a raw API request
+airflow-api-client raw GET /api/v2/dags
+```
 
 ## Authentication
 
@@ -92,22 +109,64 @@ The order of precedence for configuration is:
 
 Additionally, the output format for the human readable output can be configured using
 `AIRFLOW_API_CLIENT_TABLE_FORMAT` which must be one of the formats supported by the `tabulate`
-library (e.g. `github`, `grid`, `fancy_grid`, etc.). If not set, it defaults to `simple`.
+library (e.g. `github`, `grid`, `fancy_grid`, etc.). If not set, it defaults to `grid`.
 
 ### Command Line
 
 ```bash
-airflow-api-client -e https://airflow.example.com -u username -p password list
+airflow-api-client -e https://airflow.example.com -u username -p password list dags
 ```
 
 ## Commands
 
 ### list
 
-List all available DAGs:
+List Airflow resources. Supports subcommands for different resource types.
 
 ```bash
-airflow-api-client list
+# List all DAGs
+airflow-api-client list dags
+
+# List DAG runs for a specific DAG (most recent first, default limit: 10)
+airflow-api-client list dag-runs my_dag
+airflow-api-client list dag-runs my_dag --limit 20
+
+# List task instances for a DAG run
+airflow-api-client list task-instances my_dag/run_id
+```
+
+All list subcommands support filtering with `--filter`:
+
+```bash
+airflow-api-client list dags --filter "is_paused == true"
+airflow-api-client list dag-runs my_dag --filter "state == success"
+```
+
+### get
+
+Get detailed information about a specific resource.
+
+```bash
+# Get DAG details
+airflow-api-client get dag my_dag
+
+# Get DAG run details
+airflow-api-client get dag-run my_dag/run_id
+
+# Get task instance details
+airflow-api-client get task-instance my_dag/run_id/task_id
+
+# Get logs for all tasks in a DAG run
+airflow-api-client get log my_dag/run_id
+
+# Get log for a specific task
+airflow-api-client get log my_dag/run_id/task_id
+
+# Get log for a specific try number
+airflow-api-client get log my_dag/run_id/task_id --try-number 2
+
+# Custom timestamp format for human output
+airflow-api-client get log my_dag/run_id --time-format "%H:%M:%S"
 ```
 
 ### run
@@ -123,6 +182,21 @@ airflow-api-client run my_dag --conf '{"param": "value"}'
 
 # From file
 airflow-api-client run my_dag --conf @config.json
+
+# With a custom run ID
+airflow-api-client run my_dag --run-id my_custom_run_id
+
+# Trigger without waiting for completion
+airflow-api-client run my_dag --no-wait
+```
+
+### pause / unpause
+
+Pause or unpause a DAG:
+
+```bash
+airflow-api-client pause my_dag
+airflow-api-client unpause my_dag
 ```
 
 ### xcom
@@ -131,17 +205,17 @@ Retrieve XCom entries:
 
 ```bash
 # All XComs for a DAG run
-airflow-api-client xcom my_dag:manual__123456
+airflow-api-client xcom my_dag/run_id
 
 # All XComs for a specific task
-airflow-api-client xcom my_dag:manual__123456:my_task
+airflow-api-client xcom my_dag/run_id/my_task
 
 # Specific XCom key
-airflow-api-client xcom my_dag:manual__123456:my_task:return_value
+airflow-api-client xcom my_dag/run_id/my_task/return_value
 ```
 
-The positional argument for the `xcom` command is in the format `dag_id:run_id:task_id:key`, where
-`task_id`, and `key` are optional. If only `dag_id` and `run_id` are provided, it will list all
+The positional argument for the `xcom` command is in the format `dag_id/run_id/task_id/key`, where
+`task_id` and `key` are optional. If only `dag_id` and `run_id` are provided, it will list all
 XComs for that DAG run. If `dag_id`, `run_id`, and `task_id` are provided, it will list all XComs
 for that task. If all four components are provided, it will retrieve the specific XCom value.
 
@@ -153,7 +227,7 @@ Generate a payload template for a DAG:
 airflow-api-client create-payload my_dag > payload.json
 ```
 
-The `run` sub-comand accepts payloads in files containing JSON. This command can generate a payload
+The `run` sub-command accepts payloads in files containing JSON. This command can generate a payload
 based on the DAG's parameters, which can then be supplied to the `run` command by prefixing the
 `--conf` argument with `@`:
 
@@ -162,37 +236,60 @@ airflow-api-client create-payload my_dag --output-file payload.json
 airflow-api-client run my_dag --conf @payload.json
 ```
 
+### raw
+
+Make raw API requests directly to Airflow. This is a power-user command that gives full control
+over the API interaction. The URL must include the full API path (e.g. `/api/v2/dags`).
+
+```bash
+# GET request
+airflow-api-client raw GET /api/v2/dags
+
+# POST with payload
+airflow-api-client raw POST /api/v2/dags/my_dag/dagRuns --payload '{"dag_run_id": "test", "conf": {}}'
+
+# With custom headers
+airflow-api-client raw GET /api/v2/dags --header "X-Custom=value"
+
+# PATCH request
+airflow-api-client raw PATCH /api/v2/dags/my_dag --payload '{"is_paused": true}'
+```
+
+Supported methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`. Output defaults to JSON.
+
 ## Output Formats
 
 Control output format with `-f`:
 
 ```bash
 # Human-readable (default)
-airflow-api-client xcom my_dag:run_id:task_id
+airflow-api-client list dags
 
 # JSON
-airflow-api-client -f json xcom my_dag:run_id:task_id
+airflow-api-client -f json list dags
 
 # YAML (available if PyYAML is installed)
-airflow-api-client -f yaml xcom my_dag:run_id:task_id
+airflow-api-client -f yaml list dags
 ```
+
+The human-readable table format can be customised by setting the `AIRFLOW_API_CLIENT_TABLE_FORMAT`
+environment variable to any format supported by the
+[tabulate](https://github.com/astanin/python-tabulate) library (e.g. `simple`, `github`,
+`fancy_grid`, `psql`, `orgtbl`, etc.). Defaults to `grid`.
 
 ## Verbosity
 
 Control logging verbosity:
 
 ```bash
-# Normal (warnings and errors)
-airflow-api-client list
-
-# Info level
-airflow-api-client -v list
+# Default (info and above)
+airflow-api-client list dags
 
 # Debug level
-airflow-api-client -vv list
+airflow-api-client -v list dags
 
 # Debug with HTTP traffic
-airflow-api-client -vvv list
+airflow-api-client -vv list dags
 ```
 
 Do note that all logging takes place on stderr by default, so that the output can be easily piped
@@ -218,9 +315,10 @@ class MyAuthProvider(AirflowAPIClientAuthProvider):
 
 Or if you want to implement a provider that obtains the password from a secret manager:
 
-```pythonpython
+```python
 # my_auth.py
 from airflow_api_client.auth import AirflowAPIClientAuthProvider
+
 class MyAuthProvider(AirflowAPIClientAuthProvider):
     @property
     def password(self):
@@ -231,8 +329,10 @@ class MyAuthProvider(AirflowAPIClientAuthProvider):
 Any arguments your custom auth provider needs can be added to the parser by overriding the
 `add_arguments` class method:
 
-```python# my_auth.py
+```python
+# my_auth.py
 from airflow_api_client.auth import AirflowAPIClientAuthProvider
+
 class MyAuthProvider(AirflowAPIClientAuthProvider):
     @classmethod
     def add_arguments(cls, profile: str, parser: "ArgumentParser", config: "RawConfigParser"):
@@ -245,7 +345,6 @@ class MyAuthProvider(AirflowAPIClientAuthProvider):
         return self.get_token_using_arg(self.args.my_arg)
 ```
 
-
 Register it via entry points in `pyproject.toml`:
 
 ```toml
@@ -256,7 +355,7 @@ myauth = "my_package.my_auth:MyAuthProvider"
 Use it:
 
 ```bash
-airflow-api-client --auth-provider myauth list
+airflow-api-client --auth-provider myauth list dags
 ```
 
 ## Custom Commands
@@ -303,6 +402,9 @@ uv run black airflow_api_client/
 uv run isort airflow_api_client/
 uv run pylint airflow_api_client/
 uv run flake8 airflow_api_client/
+
+# Run tests
+uv run pytest
 
 # Run the CLI
 uv run airflow-api-client --help

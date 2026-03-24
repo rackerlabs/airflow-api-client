@@ -231,8 +231,12 @@ def test_dagrun_xcoms_integration(mock_app, mock_xcom_entry):
     mock_ti_collection = MagicMock()
     mock_ti1 = MagicMock()
     mock_ti1.task_id = "task1"
+    mock_ti1.end_date = "2026-03-19T12:00:00"
+    mock_ti1.start_date = "2026-03-19T12:00:00"
     mock_ti2 = MagicMock()
     mock_ti2.task_id = "task2"
+    mock_ti2.end_date = "2026-03-19T12:01:00"
+    mock_ti2.start_date = "2026-03-19T12:01:00"
     mock_ti_collection.task_instances = [mock_ti1, mock_ti2]
     mock_app.client._task_instance_api.get_task_instances.return_value = mock_ti_collection
 

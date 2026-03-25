@@ -602,7 +602,7 @@ class DAG:
         parameter defined in the DAG's parameters.
         """
         constructor = PayloadConstructor(self.params)
-        return {"conf": constructor.construct_payload()}
+        return constructor.construct_payload()
 
     def __getattr__(self, item) -> Any:
         """Delegate attribute access to the underlying DAG details object. If the DAG details

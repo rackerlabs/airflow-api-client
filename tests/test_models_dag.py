@@ -156,8 +156,8 @@ def test_dag_create_payload(mock_app, mock_dag_details, monkeypatch):
     dag = DAG(mock_app, "test_dag")
     payload = dag.create_payload()
 
-    assert "conf" in payload
-    assert payload["conf"]["param1"] == "test_value"
+    assert "param1" in payload
+    assert payload["param1"] == "test_value"
 
 
 def test_dag_repr(mock_app):

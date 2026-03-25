@@ -183,7 +183,7 @@ def parse_args(commands, providers):
     if config_path.is_file():
         config.read(config_path)
 
-    parser = argparse.ArgumentParser(description="RAW client", allow_abbrev=False)
+    parser = argparse.ArgumentParser(description="Airflow API Client", allow_abbrev=False)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--auth-provider",
@@ -303,6 +303,8 @@ def parse_args(commands, providers):
         )
         parser.print_help()
         sys.exit(1)
+
+    args.endpoint = args.endpoint.rstrip("/") if args.endpoint else None
 
     return args
 

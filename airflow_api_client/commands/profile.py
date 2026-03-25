@@ -155,6 +155,7 @@ class ProfileCommand(Command):
         endpoint = app.args.endpoint or input("Enter Airflow API endpoint: ")
         username = app.args.username or input("Enter Airflow username: ")
 
+        endpoint = endpoint.strip().rstrip("/")
         config.set(profile, "endpoint", endpoint)
         config.set(profile, "username", username)
 

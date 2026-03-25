@@ -20,6 +20,11 @@ import requests
 
 from airflow_api_client.log import logger
 
+try:
+    import keyring  # noqa: F401, optional dependency for secure password storage
+except ImportError:
+    keyring = None
+
 if TYPE_CHECKING:
     # The type hint for `args` argument
     from configparser import RawConfigParser
@@ -73,10 +78,22 @@ class AirflowAPIClientAuthProvider:
 
     @property
     def password(self) -> str:
-        """Returns the password for authentication. Raises an error if password is not provided."""
-        if self.args.password is None:
-            raise ValueError("Password is required for DefaultAuthProvider")
-        return self.args.password
+        """Returns the password for authentication. Falls back to keyring if available."""
+        if self.args.password is not None:
+            return self.args.password
+
+        if keyring:
+            password = keyring.get_password(
+                f"airflow-api-client/{self.args.endpoint}", self.username
+            )
+            if password:
+                logger.debug("Using password from keyring")
+                return password
+
+        raise ValueError(
+            "Password is required. Provide via --password, AIRFLOW_API_CLIENT_PASSWORD,"
+            " config file, or install keyring support: pip install airflow-api-client[keyring]"
+        )
 
     @property
     def username(self) -> str:

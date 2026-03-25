@@ -131,17 +131,22 @@ def main(commands, args) -> None:
     command (list, run, create-payload, or xcom) and handles the output accordingly.
     """
 
-    auth_class = (
-        get_available_providers()[args.auth_provider]
-        if args.auth_provider
-        else AirflowAPIClientAuthProvider
-    )
-    logger.debug("Using auth provider", provider=args.auth_provider, auth_class=auth_class.__name__)
-    auth = auth_class(args)
-
-    app = App(Client(auth, args), args)
-
     cmd = commands[args.command]()
+
+    client = None
+    if not cmd.no_client:
+        auth_class = (
+            get_available_providers()[args.auth_provider]
+            if args.auth_provider
+            else AirflowAPIClientAuthProvider
+        )
+        logger.debug(
+            "Using auth provider", provider=args.auth_provider, auth_class=auth_class.__name__
+        )
+        auth = auth_class(args)
+        client = Client(auth, args)
+
+    app = App(client, args)
     cmd.execute(app)
 
 
@@ -288,10 +293,13 @@ def parse_args(commands, providers):
     if config_path.is_file():
         logger.debug("Loaded configuration from file", path=str(config_path))
 
-    if not args.endpoint:
+    # If the command requires an API client and no endpoint is provided, show an error and exit
+    # We need to allow for commands like `profile create` by not requiring one across the board
+    if not args.endpoint and not getattr(commands.get(args.command), "no_client", False):
         logger.error(
             "Airflow API endpoint must be provided via --endpoint, config file, or"
-            " AIRFLOW_API_CLIENT_ENDPOINT environment variable"
+            " AIRFLOW_API_CLIENT_ENDPOINT environment variable."
+            f"Use '{sys.argv[0]} profile create' to interactively create a profile"
         )
         parser.print_help()
         sys.exit(1)
@@ -331,7 +339,7 @@ def cli():
                 body=ex.body,
             )
         else:
-            logger.error("An error occurred", error=str(ex), exc_info=True)
+            logger.error("An error occurred", error=str(ex))
 
         sys.exit(1)
 

@@ -48,6 +48,45 @@ You may also specify a custom config file location with `-C` or `--config-file`:
 airflow-api-client -C /path/to/config.ini list dags
 ```
 
+### Creating Profiles
+
+Profiles can be created using the `profile create` command:
+
+```bash
+# Create a profile (password stored securely in system keyring if available)
+airflow-api-client profile create -e https://airflow.prod.example.com -u my_user
+
+# Create a named profile
+airflow-api-client profile create --profile-name production -e https://airflow.prod.example.com -u my_user
+
+# Force plaintext password storage (not recommended)
+airflow-api-client profile create -e https://airflow.prod.example.com -u my_user --no-keyring-password
+
+# Pipe password from another source
+echo "my_password" | airflow-api-client profile create -e https://airflow.prod.example.com -u my_user
+
+# Use AIRFLOW_API_CLIENT_PASSWORD environment variable
+AIRFLOW_API_CLIENT_PASSWORD=secret airflow-api-client profile create -e https://airflow.prod.example.com -u my_user
+```
+
+When run interactively, the command will prompt for any missing fields (endpoint, username,
+password) with hidden input for the password.
+
+### Keyring Support
+
+Passwords can be stored securely in the system keyring (e.g. GNOME Keyring, macOS Keychain)
+instead of plaintext in the config file. Install with:
+
+```bash
+pip install airflow-api-client[keyring]
+```
+
+When keyring is installed, `profile create` will automatically store passwords in the system
+keyring. Use `--no-keyring-password` to force plaintext storage in the config file instead.
+
+When authenticating, if no password is provided via `--password`, environment variable, or config
+file, the client will automatically check the system keyring as a fallback.
+
 ## Quick Start
 
 If no configuration file is used, the default required inputs are:

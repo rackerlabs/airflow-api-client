@@ -7,6 +7,8 @@ from argparse import ArgumentParser
 class Command(ABC):
     """Base class for CLI commands."""
 
+    no_client = False
+
     @property
     @abstractmethod
     def name(self) -> str:

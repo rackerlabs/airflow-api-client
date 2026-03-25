@@ -30,6 +30,9 @@ dev = [
     "flake8>=7.3.0",
     "pytest>=8.0.0",
 ]
+keyring = [
+    "keyring>=25.7.0",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -410,6 +410,28 @@ uv run pytest
 uv run airflow-api-client --help
 ```
 
+## How is this different from airflowctl?
+
+The Apache Airflow project maintains a separate CLI tool,
+[airflowctl](https://github.com/apache/airflow/tree/main/airflow-ctl) (`pip install
+apache-airflow-ctl`), which is auto-generated from the Airflow OpenAPI spec. It provides
+comprehensive coverage of the REST API but requires familiarity with the API endpoints and their
+parameters.
+
+This tool takes a different approach — it's a workflow-oriented tool designed for day-to-day
+operations without needing intimate knowledge of the Airflow API:
+
+- `run my_dag` interactively prompts for parameters based on the DAG's schema
+- `create-payload` introspects DAG parameters and generates a payload template
+- `xcom my_dag/run_id/task_id` uses natural path-style identifiers instead of API query parameters
+- `run` polls for completion and displays logs and XCom results automatically
+- Config file profiles let you switch between environments with `-P production`
+- Pluggable auth providers and custom commands via entry points
+- Human-readable output with filtering (`--filter "state == success"`)
+
+In short: `airflowctl` is a CLI skin over the REST API, this tool is a workflow tool that
+use the REST API.
+
 ## License
 
 Apache-2.0

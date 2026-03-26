@@ -299,7 +299,7 @@ def parse_args(commands, providers):
         logger.error(
             "Airflow API endpoint must be provided via --endpoint, config file, or"
             " AIRFLOW_API_CLIENT_ENDPOINT environment variable."
-            f"Use '{sys.argv[0]} profile create' to interactively create a profile"
+            f" Use '{sys.argv[0]} profile create' to interactively create a profile"
         )
         parser.print_help()
         sys.exit(1)

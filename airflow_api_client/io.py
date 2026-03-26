@@ -24,6 +24,9 @@ def output(data, args, headers=None, maxcolwidths=None, tablefmt=None):
 
         print(yaml.dump(data, sort_keys=False))
     elif headers is not None:  # human output, with tabular data
+        if not data:
+            logger.debug("No data to display")
+            return
         try:
             padding = len(data[0][0]) + 24  # Timestamp length + padding
         except IndexError:

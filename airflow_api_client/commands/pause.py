@@ -4,7 +4,6 @@ from airflow_api_client.commands import Command
 from airflow_api_client.io import output
 from airflow_api_client.log import logger
 from airflow_api_client.models import DAG
-from airflow_api_client.typedefs import App
 
 DESCRIPTION = """
 Command to pause a DAG. This command allows you to pause a DAG by its ID. When a DAG is paused, it
@@ -23,13 +22,13 @@ class PauseDagCommand(Command):
     def add_arguments(cls, parser) -> None:
         parser.add_argument("dag_id", help="DAG ID to pause")
 
-    def execute(self, app: App, **kwargs) -> None:
+    def execute(self, **kwargs) -> None:
         """Pause a DAG"""
         logger.debug("Executing PauseDagCommand")
 
-        dag = DAG(app, app.args.dag_id)
+        dag = DAG(self.app, self.app.args.dag_id)
         response = dag.pause()
-        logger.info(f"DAG '{app.args.dag_id}' has been paused")
+        logger.info(f"DAG '{self.app.args.dag_id}' has been paused")
 
-        if app.args.output_format in ("json", "yaml"):
-            output(response.to_dict(), app.args)
+        if self.app.args.output_format in ("json", "yaml"):
+            output(response.to_dict(), self.app.args)

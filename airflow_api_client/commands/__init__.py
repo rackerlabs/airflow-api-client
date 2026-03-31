@@ -9,6 +9,12 @@ class Command(ABC):
 
     no_client = False
 
+    def __init__(self):
+        # The app is set by the CLI in main() before executing the command.
+        # This allows for commands that don't or can't require a client (eg. profile creation) to
+        # still be executed.
+        self.app = None
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -25,5 +31,5 @@ class Command(ABC):
         """Add command-specific arguments to the subparser."""
 
     @abstractmethod
-    def execute(self, app, **kwargs):
+    def execute(self, **kwargs):
         """Execute the command."""

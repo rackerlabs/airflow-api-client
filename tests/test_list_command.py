@@ -144,15 +144,17 @@ def test_list_command_dispatch(mock_app):
     """Test that execute dispatches to correct subcommand"""
     cmd = ListCommand()
 
+    cmd.app = mock_app
+
     # Test dags dispatch
     mock_app.args.list_resource = "dags"
     with patch("airflow_api_client.commands.list.dags.ListDagsCommand.list_dags"):
-        cmd.execute(mock_app)
+        cmd.execute()
 
     # Test dag-runs dispatch
     mock_app.args.list_resource = "dag-runs"
     with patch("airflow_api_client.commands.list.dag_runs.ListDagRunsCommand.list_dag_runs"):
-        cmd.execute(mock_app)
+        cmd.execute()
 
     # Test task-instances dispatch
     mock_app.args.list_resource = "task-instances"
@@ -160,4 +162,4 @@ def test_list_command_dispatch(mock_app):
         "airflow_api_client.commands.list.task_instances.ListTaskInstancesCommand."
         "list_task_instances"
     ):
-        cmd.execute(mock_app)
+        cmd.execute()

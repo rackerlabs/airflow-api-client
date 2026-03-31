@@ -8,7 +8,6 @@ from airflow_api_client.commands import Command
 from airflow_api_client.io import output
 from airflow_api_client.log import logger
 from airflow_api_client.models import DAG, TERMINAL_DAGRUN_STATES, DAGRun
-from airflow_api_client.typedefs import App
 
 DESCRIPTION = """
 Command to trigger a DAG run with an optional payload. The response is printed to the console
@@ -43,7 +42,7 @@ class RunDagCommand(Command):
             help="Don't wait for DAG run to complete. Trigger and forget",
         )
 
-    def execute(self, app: App, **kwargs) -> None:
+    def execute(self, **kwargs) -> None:
         """Triggers a DAG with an optional payload. The response is printed to the console in the
         specified output format (JSON, YAML, or human-readable). If a payload is provided, it is
         used as the `conf` for the DAG run. If no payload is provided, the user is prompted to
@@ -53,9 +52,9 @@ class RunDagCommand(Command):
         """
         logger.debug("Executing RunDagCommand")
 
-        conf = app.args.conf
+        conf = self.app.args.conf
 
-        dag = DAG(app, app.args.dag_id)
+        dag = DAG(self.app, self.app.args.dag_id)
 
         if conf is None:
             conf = {"conf": dag.create_payload()}
@@ -75,9 +74,9 @@ class RunDagCommand(Command):
             logger.error("Invalid JSON provided for --conf", error=str(e))
             raise
 
-        dag_run: DAGRun = dag.run(conf=conf, run_id=app.args.run_id)
+        dag_run: DAGRun = dag.run(conf=conf, run_id=self.app.args.run_id)
 
-        if app.args.no_wait:
+        if self.app.args.no_wait:
             return
 
         # Poll for completion. Prefer this over calling airflow_client's wait_dag_run_until_finished
@@ -93,7 +92,7 @@ class RunDagCommand(Command):
         # when we try to retrieve them immediately after the DAG run completes.
         time.sleep(2)
 
-        if app.args.output_format in ("json", "yaml"):
+        if self.app.args.output_format in ("json", "yaml"):
             result = dag_run.to_dict()
             result["task_instances"] = {}
             for task_instance in dag_run.task_instances:
@@ -103,13 +102,13 @@ class RunDagCommand(Command):
                     "xcom": task_instance.get_xcom_entries().to_dict(),
                 }
 
-            output(result, app.args)
+            output(result, self.app.args)
             return
 
-        output([["Logs"]], app.args, headers=[])
+        output([["Logs"]], self.app.args, headers=[])
         for task_instance in dag_run.task_instances:
             task_instance.get_log().output()
 
-        output("\n", app.args)
-        output([["XCom results"]], app.args, headers=[])
+        output("\n", self.app.args)
+        output([["XCom results"]], self.app.args, headers=[])
         dag_run.xcoms.output()

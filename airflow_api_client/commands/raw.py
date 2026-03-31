@@ -5,7 +5,6 @@ import json
 from airflow_api_client.commands import Command
 from airflow_api_client.io import output
 from airflow_api_client.log import logger
-from airflow_api_client.typedefs import App
 
 DESCRIPTION = """
 Make a raw API request to Airflow. This command allows you to interact with the Airflow API
@@ -49,51 +48,51 @@ class RawCommand(Command):
             ),
         )
 
-    def execute(self, app: App, **kwargs) -> None:
+    def execute(self, **kwargs) -> None:
         """Run a raw API request to Airflow based on the provided arguments."""
 
         logger.debug("Executing RawCommand")
 
-        endpoint = f"{app.args.endpoint}/{app.args.stub_url.lstrip('/')}"
+        endpoint = f"{self.app.args.endpoint}/{self.app.args.stub_url.lstrip('/')}"
 
         headers = {
-            "Authorization": f"Bearer {app.client.auth.client_token.token}",
+            "Authorization": f"Bearer {self.app.client.auth.client_token.token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
 
-        headers.update(dict([h.split("=", maxsplit=1) for h in app.args.header or []]))
+        headers.update(dict([h.split("=", maxsplit=1) for h in self.app.args.header or []]))
         try:
-            payload = json.loads(app.args.payload) if app.args.payload else None
+            payload = json.loads(self.app.args.payload) if self.app.args.payload else None
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON payload: {e}")
             return
 
         logger.debug(
-            f"Making {app.args.method} request to {endpoint}",
+            f"Making {self.app.args.method} request to {endpoint}",
             headers=headers,
             payload=payload,
-            timeout=app.args.timeout,
+            timeout=self.app.args.timeout,
         )
 
-        response = app.client.rest_client.request(
-            app.args.method,
+        response = self.app.client.rest_client.request(
+            self.app.args.method,
             endpoint,
             body=payload,
             headers=headers,
-            _request_timeout=app.args.timeout,
+            _request_timeout=self.app.args.timeout,
         )
 
-        if app.args.output_format not in ["json", "yaml"]:
+        if self.app.args.output_format not in ["json", "yaml"]:
             # There's no pretty-printing arbitrary output for this command, so we default to JSON if
             # the user specified an unsupported format
-            app.args.output_format = "json"
+            self.app.args.output_format = "json"
 
         logger.info(f"Received response from Airflow API. Status code: {response.status}")
         response_b = response.response.read()
 
         try:
-            output(json.loads(response_b), app.args)
+            output(json.loads(response_b), self.app.args)
         except json.JSONDecodeError:
             logger.debug("Response is not valid JSON, printing raw response")
-            output(response_b, app.args)
+            output(response_b, self.app.args)

@@ -37,11 +37,13 @@ class TestProfileCreate:
         """Test creating a profile stores password in config when keyring not available"""
         app = _make_app(password="secret123")
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", None),
         ):
-            ProfileCommand()._create(app)
+            cmd._create()
 
         config = configparser.RawConfigParser()
         config.read(tmp_path / "airflow-api-client" / "config.ini")
@@ -65,11 +67,13 @@ class TestProfileCreate:
 
         app = _make_app(password="newpass")
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", None),
         ):
-            ProfileCommand()._create(app)
+            cmd._create()
 
         config = configparser.RawConfigParser()
         config.read(config_path)
@@ -81,11 +85,13 @@ class TestProfileCreate:
         app = _make_app(password="secret123")
 
         mock_keyring = MagicMock()
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", mock_keyring),
         ):
-            ProfileCommand()._create(app)
+            cmd._create()
 
         mock_keyring.set_password.assert_called_once_with(
             "airflow-api-client/https://airflow.test.example.com", "testuser", "secret123"
@@ -100,13 +106,15 @@ class TestProfileCreate:
         """Test that missing endpoint/username are prompted for"""
         app = _make_app(endpoint=None, username=None, password="secret")
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", None),
             patch("airflow_api_client.commands.profile.sys.stdin.isatty", return_value=True),
             patch("builtins.input", side_effect=["https://prompted.example.com", "prompted_user"]),
         ):
-            ProfileCommand()._create(app)
+            cmd._create()
 
         config = configparser.RawConfigParser()
         config.read(tmp_path / "airflow-api-client" / "config.ini")
@@ -118,11 +126,13 @@ class TestProfileCreate:
         app = _make_app(password="secret123", no_keyring_password=True)
 
         mock_keyring = MagicMock()
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", mock_keyring),
         ):
-            ProfileCommand()._create(app)
+            cmd._create()
 
         mock_keyring.set_password.assert_not_called()
 
@@ -135,8 +145,10 @@ class TestProfileCreate:
         config_path = tmp_path / "custom.ini"
         app = _make_app(password="secret123", config_file=config_path)
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with patch("airflow_api_client.commands.profile.keyring", None):
-            ProfileCommand()._create(app)
+            cmd._create()
 
         config = configparser.RawConfigParser()
         config.read(config_path)
@@ -146,13 +158,15 @@ class TestProfileCreate:
         """Test error when endpoint/username missing in non-interactive mode"""
         app = _make_app(endpoint=None, username=None, password="secret")
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.sys") as mock_sys,
             pytest.raises(RuntimeError, match="non-interactive"),
         ):
             mock_sys.stdin.isatty.return_value = False
-            ProfileCommand()._create(app)
+            cmd._create()
 
 
 class TestProfileDelete:
@@ -175,11 +189,13 @@ class TestProfileDelete:
 
         app = _make_app(profile_action="delete", keep_keyring_password=False)
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", None),
         ):
-            ProfileCommand()._delete(app)
+            cmd._delete()
 
         config = configparser.RawConfigParser()
         config.read(config_path)
@@ -193,11 +209,13 @@ class TestProfileDelete:
         app = _make_app(profile_action="delete", keep_keyring_password=False)
 
         mock_keyring = MagicMock()
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", mock_keyring),
         ):
-            ProfileCommand()._delete(app)
+            cmd._delete()
 
         mock_keyring.delete_password.assert_called_once_with(
             "airflow-api-client/https://airflow.test.example.com", "testuser"
@@ -211,11 +229,13 @@ class TestProfileDelete:
         app = _make_app(profile_action="delete", keep_keyring_password=True)
 
         mock_keyring = MagicMock()
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", mock_keyring),
         ):
-            ProfileCommand()._delete(app)
+            cmd._delete()
 
         mock_keyring.delete_password.assert_not_called()
 
@@ -226,12 +246,14 @@ class TestProfileDelete:
 
         app = _make_app(profile_action="delete", keep_keyring_password=False)
 
+        cmd = ProfileCommand()
+        cmd.app = app
         with (
             patch.dict("os.environ", {"XDG_CONFIG_HOME": str(tmp_path)}),
             patch("airflow_api_client.commands.profile.keyring", None),
             pytest.raises(RuntimeError, match="not found"),
         ):
-            ProfileCommand()._delete(app)
+            cmd._delete()
 
     """Tests for password retrieval logic"""
 

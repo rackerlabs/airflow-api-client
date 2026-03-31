@@ -29,8 +29,10 @@ def test_raw_get_request(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response({"dags": []})
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output") as mock_output:
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     mock_app.client.rest_client.request.assert_called_once_with(
         "GET",
@@ -59,8 +61,10 @@ def test_raw_post_with_payload(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response({"dag_run_id": "test_run"})
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output"):
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     call_kwargs = mock_app.client.rest_client.request.call_args
     assert call_kwargs[1]["body"] == {"dag_run_id": "test_run", "conf": {}}
@@ -79,8 +83,10 @@ def test_raw_custom_headers(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response({"dags": []})
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output"):
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     call_kwargs = mock_app.client.rest_client.request.call_args
     headers = call_kwargs[1]["headers"]
@@ -101,8 +107,10 @@ def test_raw_header_with_equals_in_value(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response({})
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output"):
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     call_kwargs = mock_app.client.rest_client.request.call_args
     assert call_kwargs[1]["headers"]["Authorization"] == "Bearer abc=def="
@@ -119,7 +127,9 @@ def test_raw_invalid_payload(mock_app):
     mock_app.args.output_format = "json"
     mock_app.client.auth.client_token.token = "test-token"
 
-    RawCommand().execute(mock_app)
+    cmd = RawCommand()
+    cmd.app = mock_app
+    cmd.execute()
 
     mock_app.client.rest_client.request.assert_not_called()
 
@@ -137,8 +147,10 @@ def test_raw_non_json_response(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response(b"OK", status=200)
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output") as mock_output:
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     mock_output.assert_called_once_with(b"OK", mock_app.args)
 
@@ -156,8 +168,10 @@ def test_raw_human_format_defaults_to_json(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response({"dags": []})
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output"):
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     assert mock_app.args.output_format == "json"
 
@@ -175,8 +189,10 @@ def test_raw_strips_leading_slash(mock_app):
 
     mock_app.client.rest_client.request.return_value = _mock_response({})
 
+    cmd = RawCommand()
+    cmd.app = mock_app
     with patch("airflow_api_client.commands.raw.output"):
-        RawCommand().execute(mock_app)
+        cmd.execute()
 
     call_kwargs = mock_app.client.rest_client.request.call_args
     assert call_kwargs[1] is None or "///" not in call_kwargs[0][1]

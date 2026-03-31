@@ -147,7 +147,8 @@ def main(commands, args) -> None:
         client = Client(auth, args)
 
     app = App(client, args)
-    cmd.execute(app)
+    cmd.app = app
+    cmd.execute()
 
 
 def parse_args(commands, providers):

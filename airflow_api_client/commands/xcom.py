@@ -3,7 +3,6 @@
 from airflow_api_client.commands import Command
 from airflow_api_client.log import logger
 from airflow_api_client.models import ResourceSpec
-from airflow_api_client.typedefs import App
 
 
 class XComCommand(Command):
@@ -28,12 +27,12 @@ class XComCommand(Command):
             ),
         )
 
-    def execute(self, app: App, **kwargs) -> None:
-        logger.debug("Executing XComCommand with arguments", xcom_spec=app.args.xcom_spec)
-        # xcom.get_xcom(app, app.args.xcom_spec)
-        spec = ResourceSpec.from_string(app, app.args.xcom_spec)
+    def execute(self, **kwargs) -> None:
+        logger.debug("Executing XComCommand with arguments", xcom_spec=self.app.args.xcom_spec)
+        # xcom.get_xcom(self.app, self.app.args.xcom_spec)
+        spec = ResourceSpec.from_string(self.app, self.app.args.xcom_spec)
 
-        logger.debug(f"Getting XCom entry with specification {app.args.xcom_spec}", spec=spec)
+        logger.debug(f"Getting XCom entry with specification {self.app.args.xcom_spec}", spec=spec)
 
         if spec.task_instance:  # Covers dag_id:dag_run_id:task_id and dag_id:dag_run_id:task_id:key
             logger.debug(

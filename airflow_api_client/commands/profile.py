@@ -3,12 +3,13 @@
 import configparser
 import os
 import sys
+from functools import cached_property
 from getpass import getpass
 from pathlib import Path
 
 from airflow_api_client.commands import Command
+from airflow_api_client.io import output
 from airflow_api_client.log import logger
-from airflow_api_client.typedefs import App
 
 try:
     import keyring
@@ -31,6 +32,8 @@ class ProfileCommand(Command):
     @classmethod
     def add_arguments(cls, parser) -> None:
         subparsers = parser.add_subparsers(dest="profile_action", required=True)
+
+        subparsers.add_parser("list", help="List all profiles")
 
         delete_parser = subparsers.add_parser("delete", help="Delete an existing profile")
         delete_parser.add_argument(
@@ -71,13 +74,23 @@ class ProfileCommand(Command):
             ),
         )
 
-    def execute(self, app: App, **kwargs) -> None:
-        """Execute profile subcommand"""
-        if app.args.profile_action == "create":
-            self._create(app)
+    @cached_property
+    def _config_path(self) -> Path:
+        """Determine the path to the config file based on environment variables and defaults"""
+        default_config_dir = os.getenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+        return (
+            self.app.args.config_file
+            or Path(default_config_dir) / "airflow-api-client" / "config.ini"
+        )
 
-        elif app.args.profile_action == "delete":
-            self._delete(app)
+    def execute(self, **kwargs) -> None:
+        """Execute profile subcommand"""
+        if self.app.args.profile_action == "list":
+            self._list()
+        elif self.app.args.profile_action == "create":
+            self._create()
+        elif self.app.args.profile_action == "delete":
+            self._delete()
 
     def get_password(self, args, endpoint, username) -> str:
         """Get password from command line arguments or environment variable, or fall-back to
@@ -94,23 +107,44 @@ class ProfileCommand(Command):
 
         return sys.stdin.readline().strip()
 
-    def _delete(self, app: App) -> None:
-        """Delete an existing profile"""
-        default_config_dir = os.getenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))
-        config_path = (
-            app.args.config_file or Path(default_config_dir) / "airflow-api-client" / "config.ini"
-        )
-        if not config_path.is_file():
-            raise RuntimeError(f"No config file found at {config_path}")
+    def _list(self) -> None:
+        """List all profiles in the config file"""
+        if not self._config_path.is_file():
+            raise RuntimeError(f"No config file found at {self._config_path}")
 
         config = configparser.RawConfigParser()
-        config.read(config_path)
-        profile = app.args.profile_name
+        config.read(self._config_path)
+
+        sections = config.sections()
+        if not sections:
+            print("No profiles found.")
+            return
+
+        headers = ["Profile", "Endpoint", "Username"]
+        data = [
+            [
+                section,
+                config.get(section, "endpoint", fallback="(not set)"),
+                config.get(section, "username", fallback="(not set)"),
+            ]
+            for section in sections
+        ]
+
+        output(data, self.app.args, headers=headers)
+
+    def _delete(self) -> None:
+        """Delete an existing profile"""
+        if not self._config_path.is_file():
+            raise RuntimeError(f"No config file found at {self._config_path}")
+
+        config = configparser.RawConfigParser()
+        config.read(self._config_path)
+        profile = self.app.args.profile_name
 
         if not config.has_section(profile):
             raise RuntimeError(f"Profile '{profile}' not found in config file")
 
-        if keyring and not app.args.keep_keyring_password:
+        if keyring and not self.app.args.keep_keyring_password:
             try:
                 keyring.delete_password(
                     f"airflow-api-client/{config.get(profile, 'endpoint')}",
@@ -121,53 +155,49 @@ class ProfileCommand(Command):
                 logger.debug("No keyring entry found for this profile")
 
         config.remove_section(profile)
-        with config_path.open("w", encoding="utf-8") as f:
+        with self._config_path.open("w", encoding="utf-8") as f:
             config.write(f)
 
-        logger.info(f"Profile '{profile}' deleted from {config_path}")
+        logger.info(f"Profile '{profile}' deleted from {self._config_path}")
 
-    def _create(self, app: App) -> None:
+    def _create(self) -> None:
         """Create a new profile"""
-        default_config_dir = os.getenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))
-        config_path = (
-            app.args.config_file or Path(default_config_dir) / "airflow-api-client" / "config.ini"
-        )
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        self._config_path.parent.mkdir(parents=True, exist_ok=True)
 
         config = configparser.RawConfigParser()
-        if config_path.is_file():
-            config.read(config_path)
+        if self._config_path.is_file():
+            config.read(self._config_path)
 
-        profile = app.args.profile_name
+        profile = self.app.args.profile_name
 
         if config.has_section(profile):
             logger.warning(f"Profile '{profile}' already exists, overwriting")
         else:
             config.add_section(profile)
 
-        if (not app.args.endpoint or not app.args.username) and not sys.stdin.isatty():
+        if (not self.app.args.endpoint or not self.app.args.username) and not sys.stdin.isatty():
             raise RuntimeError(
                 "Endpoint and username must be provided as arguments when running in"
                 " non-interactive mode. Use --endpoint and --username options or run the command in"
                 " an interactive terminal."
             )
 
-        endpoint = app.args.endpoint or input("Enter Airflow API endpoint: ")
-        username = app.args.username or input("Enter Airflow username: ")
+        endpoint = self.app.args.endpoint or input("Enter Airflow API endpoint: ")
+        username = self.app.args.username or input("Enter Airflow username: ")
 
         endpoint = endpoint.strip().rstrip("/")
         config.set(profile, "endpoint", endpoint)
         config.set(profile, "username", username)
 
-        password = self.get_password(app.args, endpoint, username)
+        password = self.get_password(self.app.args, endpoint, username)
 
-        if keyring and not app.args.no_keyring_password:
+        if keyring and not self.app.args.no_keyring_password:
             keyring.set_password(f"airflow-api-client/{endpoint}", username, password)
             logger.info("Password stored in system keyring")
         else:
             config.set(profile, "password", password)
 
-        with config_path.open("w", encoding="utf-8") as f:
+        with self._config_path.open("w", encoding="utf-8") as f:
             config.write(f)
 
-        logger.info(f"Profile '{profile}' saved to {config_path}")
+        logger.info(f"Profile '{profile}' saved to {self._config_path}")

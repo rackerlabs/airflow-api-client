@@ -9,7 +9,6 @@ from airflow_api_client.commands.get.log import GetLogCommand
 from airflow_api_client.commands.get.task_instance import GetTaskInstanceCommand
 from airflow_api_client.io import output
 from airflow_api_client.log import logger
-from airflow_api_client.typedefs import App
 
 DESCRIPTION = """
 Command to get details about a specific Airflow resource. This command retrieves full details
@@ -33,31 +32,31 @@ class GetCommand(Command):
         GetTaskInstanceCommand.add_subparser(subparsers)
         GetLogCommand.add_subparser(subparsers)
 
-    def execute(self, app: App, **kwargs) -> None:
+    def execute(self, **kwargs) -> None:
         """Get details about a specific resource"""
-        logger.debug(f"Executing GetCommand for resource type: {app.args.resource_type}")
+        logger.debug(f"Executing GetCommand for resource type: {self.app.args.resource_type}")
 
         result = None
-        if app.args.resource_type == "dag":
+        if self.app.args.resource_type == "dag":
 
-            result = GetDagCommand.get_dag(app)
-        elif app.args.resource_type == "dag-run":
+            result = GetDagCommand.get_dag(self.app)
+        elif self.app.args.resource_type == "dag-run":
 
-            result = GetDagRunCommand.get_dag_run(app)
-        elif app.args.resource_type == "task-instance":
+            result = GetDagRunCommand.get_dag_run(self.app)
+        elif self.app.args.resource_type == "task-instance":
 
-            result = GetTaskInstanceCommand.get_task_instance(app)
-        elif app.args.resource_type == "log":
-            result = GetLogCommand.get_log(app)
+            result = GetTaskInstanceCommand.get_task_instance(self.app)
+        elif self.app.args.resource_type == "log":
+            result = GetLogCommand.get_log(self.app)
 
         if result:
             # For human output, format as key-value table
-            if app.args.output_format == "human":
-                self._output_human(app, result)
+            if self.app.args.output_format == "human":
+                self._output_human(result)
             else:
-                output(result, app.args)
+                output(result, self.app.args)
 
-    def _output_human(self, app: App, data: dict) -> None:
+    def _output_human(self, data: dict) -> None:
         """Output data in human-readable key-value format"""
 
         rows = []
@@ -69,4 +68,4 @@ class GetCommand(Command):
                 value_str = str(value)
             rows.append([key, value_str])
 
-        output(rows, app.args, headers=["Field", "Value"])
+        output(rows, self.app.args, headers=["Field", "Value"])

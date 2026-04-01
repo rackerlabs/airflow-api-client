@@ -120,15 +120,27 @@ class ProfileCommand(Command):
             print("No profiles found.")
             return
 
-        headers = ["Profile", "Endpoint", "Username"]
-        data = [
-            [
-                section,
-                config.get(section, "endpoint", fallback="(not set)"),
-                config.get(section, "username", fallback="(not set)"),
-            ]
-            for section in sections
-        ]
+        headers = {"profile": "Profile", "endpoint": "Endpoint", "username": "Username"}
+        data = []
+
+        for section in sections:
+            if keyring and not config.has_option(section, "password"):
+                password = "(stored in keyring)"
+            elif config.has_option(section, "password"):
+                password = "(stored in config)"
+            else:
+                password = "(not set)"
+
+            data.append(
+                {
+                    "profile": section,
+                    "endpoint": config.get(section, "endpoint", fallback="(not set)"),
+                    "username": config.get(section, "username", fallback="(not set)"),
+                    "verbose": config.get(section, "verbose", fallback="default"),
+                    "password": password,
+                    "auth_provider": config.get(section, "auth_provider", fallback="default"),
+                }
+            )
 
         output(data, self.app.args, headers=headers)
 

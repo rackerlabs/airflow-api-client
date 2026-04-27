@@ -255,7 +255,7 @@ class TestProfileDelete:
         ):
             cmd._delete()
 
-    """Tests for password retrieval logic"""
+    # Tests for password retrieval logic
 
     def test_password_from_args(self):
         """Test password from --password flag"""

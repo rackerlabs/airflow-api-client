@@ -11,7 +11,7 @@ pip install airflow-api-client
 Or install from source:
 
 ```bash
-git clone https://github.com/yourusername/airflow-api-client.git
+git clone https://github.com/rackerlabs/airflow-api-client.git
 cd airflow-api-client
 uv sync
 ```
@@ -432,7 +432,7 @@ mycommand = "my_package.my_commands:MyCommand"
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/airflow-api-client.git
+git clone https://github.com/rackerlabs/airflow-api-client.git
 cd airflow-api-client
 uv sync --extra dev
 

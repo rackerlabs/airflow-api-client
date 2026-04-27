@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Get task instance log"""
 
 from airflow_client.client.exceptions import NotFoundException

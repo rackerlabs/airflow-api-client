@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """A module for interacting with Airflow DAGs, DAG runs, task instances, XCom and any other
 Airflow entities via the Airflow API.
 """

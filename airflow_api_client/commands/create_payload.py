@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Command to construct a payload for a DAG run by prompting for values for each parameter defined
 in the DAG's parameters.
 """

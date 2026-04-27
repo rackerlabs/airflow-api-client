@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 
 """Airflow API Client"""
 
-# This is a client for Airflow 3.1 and the RAW environment
+# This is a client for Airflow 3.1
 import argparse
 import configparser
 import importlib

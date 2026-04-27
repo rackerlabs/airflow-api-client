@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Authentication provider for Airflow API client that supports JWT tokens.
 AirflowAPIClientAuthProvider is the default authentication provider for Airflow API client. Custom
 providers can be implemented by subclassing AirflowAPIClientAuthProvider and overriding the

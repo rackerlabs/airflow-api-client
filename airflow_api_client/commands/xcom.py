@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Code related to the xcom sub-command"""
 
 from airflow_api_client.commands import Command

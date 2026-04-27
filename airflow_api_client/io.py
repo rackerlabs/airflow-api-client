@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Utility functions for outputting data in various formats (JSON, YAML, human-readable tables)."""
 
 import json

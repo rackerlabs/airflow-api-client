@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Main get command with subcommand dispatch"""
 
 import json

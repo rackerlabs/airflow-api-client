@@ -1,3 +1,4 @@
+# Copyright 2026 Rackspace Technology, Inc. SPDX-License-Identifier: Apache-2.0
 """Logging configuration for the application, using structlog for structured logging with
 pretty-printed collections in the console output.
 """

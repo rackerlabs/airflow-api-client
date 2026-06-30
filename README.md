@@ -4,8 +4,11 @@ A command-line tool for interacting with Apache Airflow 3.x via its REST API.
 
 ## Installation
 
+Install with the extra matching your Airflow server's major version:
+
 ```bash
-pip install airflow-api-client
+# Airflow 3.x
+pip install airflow-api-client[airflow3]
 ```
 
 Or install from source:
@@ -13,7 +16,7 @@ Or install from source:
 ```bash
 git clone https://github.com/rackerlabs/airflow-api-client.git
 cd airflow-api-client
-uv sync
+uv sync --extra airflow3
 ```
 
 ## Configuration
@@ -78,7 +81,7 @@ Passwords can be stored securely in the system keyring (e.g. GNOME Keyring, macO
 instead of plaintext in the config file. Install with:
 
 ```bash
-pip install airflow-api-client[keyring]
+pip install airflow-api-client[airflow3,keyring]
 ```
 
 When keyring is installed, `profile create` will automatically store passwords in the system
@@ -434,7 +437,7 @@ mycommand = "my_package.my_commands:MyCommand"
 # Clone and install
 git clone https://github.com/rackerlabs/airflow-api-client.git
 cd airflow-api-client
-uv sync --extra dev
+uv sync --extra dev --extra airflow3
 
 # Run linters
 uv run black airflow_api_client/
@@ -478,4 +481,4 @@ Apache-2.0
 ## Requirements
 
 - Python 3.10+
-- Apache Airflow 3.1+
+- Apache Airflow 3.1+ (install with `[airflow3]` extra)

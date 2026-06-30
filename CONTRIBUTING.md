@@ -39,7 +39,7 @@ Requires Python 3.10+ and [uv](https://github.com/astral-sh/uv).
 ```bash
 git clone https://github.com/rackerlabs/airflow-api-client.git
 cd airflow-api-client
-uv sync --extra dev
+uv sync --extra dev --extra airflow3
 ```
 
 Install pre-commit hooks (runs Black, isort, and Pylint before each commit):

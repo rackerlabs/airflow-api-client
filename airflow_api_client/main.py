@@ -19,10 +19,15 @@ import airflow_client.client
 import requests
 
 from airflow_api_client.auth import AirflowAPIClientAuthProvider
-from airflow_api_client.commands import Command
-from airflow_api_client.io import yaml
-from airflow_api_client.log import logger, set_log_level
-from airflow_api_client.typedefs import App
+from airflow_api_client.compat import patch_airflow_client_models
+
+patch_airflow_client_models()
+
+# pylint: disable=wrong-import-position
+from airflow_api_client.commands import Command  # noqa: E402
+from airflow_api_client.io import yaml  # noqa: E402
+from airflow_api_client.log import logger, set_log_level  # noqa: E402
+from airflow_api_client.typedefs import App  # noqa: E402
 
 try:
     __version__ = version("airflow-api-client")

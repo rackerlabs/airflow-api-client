@@ -88,11 +88,6 @@ class RunDagCommand(Command):
 
         logger.info("DAG run completed", dag=dag, final_state=dag_run.state)
 
-        # When using remote logs, we need to wait a moment for the logs to be available after the
-        # DAG run completes. This is a bit of a hack, but without it we often end up with empty logs
-        # when we try to retrieve them immediately after the DAG run completes.
-        time.sleep(2)
-
         if self.app.args.output_format in ("json", "yaml"):
             result = dag_run.to_dict()
             result["task_instances"] = {}

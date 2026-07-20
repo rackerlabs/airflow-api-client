@@ -3,9 +3,11 @@
 Airflow entities via the Airflow API.
 """
 
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Union
 
+from airflow_client import client
 from airflow_client.client.models import (
     DAGDetailsResponse,
     DAGPatchBody,
@@ -246,14 +248,31 @@ class Log:
             f"Fetching log for task instance '{self.task_instance.id}' in DAG run"
             f" '{self.dag_run.id}' of DAG '{self.dag.id}' from Airflow API"
         )
-        self._log_data = self.app.client._task_instance_api.get_log(
-            dag_id=self.dag.id,
-            dag_run_id=self.dag_run.id,
-            task_id=self.task_instance.id,
-            try_number=self.try_number,
-        )
+        # When using remote logs, such as CloudWatch, the log stream might not be immediately
+        # available after the task instance has finished. In this case, we need to retry fetching
+        # the log until it becomes available. The Airflow API will return a 404 or 500 error if the
+        # log stream fails to fetch.
+        tries = 0
+        while tries < 5:
+            try:
+                self._log_data = self.app.client._task_instance_api.get_log(
+                    dag_id=self.dag.id,
+                    dag_run_id=self.dag_run.id,
+                    task_id=self.task_instance.id,
+                    try_number=self.try_number,
+                )
+                return self._log_data
+            except client.exceptions.ServiceException as ex:
+                if ex.status not in [500, 404]:
+                    raise
 
-        return self._log_data
+                tries += 1
+                time.sleep(1)
+                logger.warning(
+                    f"Failed to fetch log for task instance '{self.task_instance.id}' in DAG run"
+                    f" '{self.dag_run.id}' of DAG '{self.dag.id}' from Airflow API. Retrying..."
+                )
+        return None
 
     def __iter__(self) -> Iterator[Dict]:
         """Return an iterator over the list of log entries, returning a dictionary with the

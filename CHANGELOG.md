@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-20
+
+### Added
+
+- Project URLs (homepage, repository, issues, changelog) in package metadata,
+  shown as links on the PyPI project page.
+
+### Changed
+
+- Removed the author email address from package metadata.
+
 ## [0.1.0] - 2026-07-20
 
 Initial release.
@@ -33,5 +44,6 @@ Initial release.
 - `airflow3` optional dependency extra to install the matching
   `apache-airflow-client` for Airflow 3.x servers.
 
-[Unreleased]: https://github.com/rackerlabs/airflow-api-client/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/rackerlabs/airflow-api-client/releases/tag/v0.1.0
+[Unreleased]: https://github.com/rackerlabs/airflow-api-client/compare/0.1.1...HEAD
+[0.1.1]: https://github.com/rackerlabs/airflow-api-client/compare/0.1.0...0.1.1
+[0.1.0]: https://github.com/rackerlabs/airflow-api-client/releases/tag/0.1.0

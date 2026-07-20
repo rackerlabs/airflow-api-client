@@ -1,9 +1,9 @@
 [project]
 name = "airflow-api-client"
-version = "0.1.0"
+version = "0.1.1"
 description = "Interact with Apache Airflow through its API. Trigger and list DAGs etc."
 authors = [
-    {name = "Erik Ljungstrom",email = "erik.ljungstrom@rackspace.co.uk"}
+    {name = "Erik Ljungstrom"}
 ]
 license = {text = "Apache-2.0"}
 readme = "README.md"
@@ -14,6 +14,12 @@ dependencies = [
     "tabulate>=0.9.0",
     "jmespath>=1.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rackerlabs/airflow-api-client"
+Repository = "https://github.com/rackerlabs/airflow-api-client"
+Issues = "https://github.com/rackerlabs/airflow-api-client/issues"
+Changelog = "https://github.com/rackerlabs/airflow-api-client/blob/main/CHANGELOG.md"
 
 [project.entry-points."airflow_api_client.auth"]
 default = "airflow_api_client.auth:AirflowAPIClientAuthProvider"
